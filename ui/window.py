@@ -45,6 +45,8 @@ try:
 except Exception:
     skia = None
 
+from alt import data as _alt_data
+
 # Формат OpenGL для аппаратного ускорения Skia (Ganesh): нужен stencil и альфа-канал.
 # Задаётся при импорте модуля, до создания первого QOpenGLWidget.
 _gl_fmt = QSurfaceFormat.defaultFormat()
@@ -950,8 +952,28 @@ class QtImage(QOpenGLWidget):
         self._buf_h: int = 0
         self._frame_ready = False       # в GPU-поверхности есть готовый кадр
 
+        self.setMouseTracking(True)     # двигать мышь без зажатой кнопки тоже нужно видеть
+
         if image is not None:
             self.set_image(image)
+
+    # --- мышь: сохраняем состояние для Lua (drawer.get_mouse)
+    def mouseMoveEvent(self, e):
+        p = e.position()
+        _alt_data.mouse_state.update(x=p.x(), y=p.y(), inside=True)
+
+    def mousePressEvent(self, e):
+        p = e.position()
+        _alt_data.mouse_state.update(x=p.x(), y=p.y(), inside=True)
+        if e.button() == Qt.MouseButton.LeftButton:
+            _alt_data.mouse_state["down"] = True
+
+    def mouseReleaseEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            _alt_data.mouse_state["down"] = False
+
+    def leaveEvent(self, e):
+        _alt_data.mouse_state["inside"] = False
 
     # --- жизненный цикл OpenGL
     def initializeGL(self) -> None:

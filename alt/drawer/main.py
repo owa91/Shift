@@ -65,14 +65,14 @@ def draw_button(canvas: skia.Canvas, x, y, width, height, corners, color, text, 
     style = style_map.get(font_style, skia.FontStyle.Normal())
     font = cache.get_skia_font(font, style, font_size)
 
-    text = skia.Paint(
+    text_paint = skia.Paint(
         AntiAlias=True,
         Color=skia.Color(*text_color)
     )
 
     width_t = font.measureText(text)
     text_x = x
-    text_y = y + (font.getSize() / 3)
+    text_y = rect.centerY() + (font.getSize() / 3)
     if text_align == "center":
         text_x = rect.centerX() - (width_t / 2)
     elif text_align == "right":
@@ -80,7 +80,7 @@ def draw_button(canvas: skia.Canvas, x, y, width, height, corners, color, text, 
     elif text_align == "left":
         text_x = x + 10
 
-    canvas.drawString(text, text_x, text_y, font, style)
+    canvas.drawString(text, text_x, text_y, font, text_paint)
 
 
 
@@ -128,6 +128,28 @@ def draw(window: w.ShiftWindow, tab_index):
                     outline.get("color"),
                     outline.get("weight", 0),
                     task.get("align", "left"),
+                )
+            except Exception as e:
+                console_messages.append({
+                    "type": "warn",
+                    "message": e,
+                })
+        elif task["type"] == "button":
+            try:
+                draw_button(
+                    canvas,
+                    task["position"]["x"],
+                    task["position"]["y"],
+                    task["width"],
+                    task["height"],
+                    task["border_corner"],
+                    task["color"],
+                    task["text"],
+                    task["font"],
+                    task["font_style"],
+                    task["font_size"],
+                    task["text_color"],
+                    task["text_align"],
                 )
             except Exception as e:
                 console_messages.append({

@@ -1,55 +1,98 @@
--- Анимация "DVD-плеер": логотип летает по экрану и отскакивает от краёв.
-drawer.fill_background("#000000")
+-- Тестовая страница: кнопка с событиями и "точка", следящая за мышью.
+drawer.fill_background("#0B0C0F")
 
-local text      = "DVD"
-local font_size = 80
-local colors    = { "#FF3B30", "#FF9500", "#FFCC00", "#34C759", "#00C7BE", "#007AFF", "#AF52DE", "#FF2D55" }
-
--- Примерный размер текста (измерения текста в API пока нет)
-local text_w = #text * font_size * 0.65
-local text_h = font_size * 1.2
-
-local x, y   = 100, 100
-local vx, vy = 3, 2.5          -- скорость в пикселях за кадр
-local color_i = 1
-
-local logo = drawer.draw_text(x, y, text, font_size, "Calibri", "Bold", colors[color_i], false, 1.0, "left")
-
-local function next_color()
-    color_i = color_i % #colors + 1
-    drawer.redraw_text(logo, { color = colors[color_i] })
+-- ───────────── Вспомогательное ─────────────
+local function hex_to_rgb(hex)
+    return tonumber(hex:sub(2, 3), 16), tonumber(hex:sub(4, 5), 16), tonumber(hex:sub(6, 7), 16)
 end
+
+-- Плавная смесь двух цветов: t = 0 -> a, t = 1 -> b
+local function lerp_color(a, b, t)
+    local ar, ag, ab = hex_to_rgb(a)
+    local br, bg, bb = hex_to_rgb(b)
+    return string.format("#%02X%02X%02X",
+        math.floor(ar + (br - ar) * t + 0.5),
+        math.floor(ag + (bg - ag) * t + 0.5),
+        math.floor(ab + (bb - ab) * t + 0.5))
+end
+
+-- ───────────── Кнопка ─────────────
+local BTN_W, BTN_H = 220, 56
+local COLOR_IDLE     = "#6C8CFF"
+local COLOR_HOVER    = "#FF8C42"
+local COLOR_DISABLED = "#3A3F4B"
+
+local btn = drawer.button(0, 0, "Нажми меня")
+btn:set_size(BTN_W, BTN_H)
+btn:set_font_style("Calibri", "Bold", 22)
+btn:set_border_corner(14)
+btn:set_color(COLOR_IDLE)
+btn:set_text_color("#FFFFFF")
+btn:set_text_align("center")
+
+local hover_t = 0          -- 0..1, прогресс анимации наведения
+local HOVER_SPEED = 0.12   -- шаг анимации за кадр
+local hovered = false
+local btn_disabled = false
+
+-- События кнопки (выполняются в этом же потоке, внутри sleep)
+btn:event("on_selected", function() hovered = true end)
+btn:event("on_deselected", function() hovered = false end)
+btn:event("on_left_click", function()
+    if btn_disabled then return end
+    btn_disabled = true
+    hovered = false
+    btn:set_text("Заблокировано")
+    btn:set_color(COLOR_DISABLED)
+    btn:set_text_color("#7A8090")
+end)
+
+-- ───────────── Точка (большой символ ●) ─────────────
+local DOT_SIZE = 120
+local DOT_Y_OFFSET = DOT_SIZE * 0.67   -- центр глифа ● по вертикали (Calibri)
+local DOT_COLORS = { "#FFFFFF", "#FF3B30", "#34C759", "#007AFF", "#FFCC00", "#AF52DE" }
+local dot_i = 1
+
+local dot = drawer.draw_text(-1000, -1000, "●", DOT_SIZE, "Calibri", "Regular", DOT_COLORS[dot_i], false, 1.0, "center")
+
+-- ───────────── Главный цикл ─────────────
+local btn_x, btn_y = 0, 0
+local was_down = false
 
 while true do
     local screen_w, screen_h = drawer.get_size_screen()
+    local mx, my, down, inside = drawer.get_mouse()
 
-    x = x + vx
-    y = y + vy
-
-    local bounced = false
-    if x <= 0 then
-        x = 0
-        vx = math.abs(vx)
-        bounced = true
-    elseif x + text_w >= screen_w then
-        x = math.max(0, screen_w - text_w)
-        vx = -math.abs(vx)
-        bounced = true
+    -- кнопка по центру экрана
+    local nx, ny = (screen_w - BTN_W) / 2, (screen_h - BTN_H) / 2
+    if nx ~= btn_x or ny ~= btn_y then
+        btn_x, btn_y = nx, ny
+        btn:set_position(btn_x, btn_y)
     end
 
-    if y <= 0 then
-        y = 0
-        vy = math.abs(vy)
-        bounced = true
-    elseif y + text_h >= screen_h then
-        y = math.max(0, screen_h - text_h)
-        vy = -math.abs(vy)
-        bounced = true
+    -- плавное наведение (пока кнопка не заблокирована)
+    if not btn_disabled then
+        local target = hovered and 1 or 0
+        if hover_t < target then hover_t = math.min(target, hover_t + HOVER_SPEED)
+        elseif hover_t > target then hover_t = math.max(target, hover_t - HOVER_SPEED) end
+        btn:set_color(lerp_color(COLOR_IDLE, COLOR_HOVER, hover_t))
     end
 
-    if bounced then next_color() end
+    -- точка следует за курсором, при нажатии меняет цвет
+    local pressed = down and not was_down
+    was_down = down
 
-    drawer.redraw_text(logo, { position = { x = x, y = y } })
+    local props = {}
+    if inside then
+        props.position = { x = mx, y = my - DOT_Y_OFFSET }
+    end
+    if pressed then
+        dot_i = dot_i % #DOT_COLORS + 1
+        props.color = DOT_COLORS[dot_i]
+    end
+    if props.position or props.color then
+        drawer.redraw_text(dot, props)
+    end
 
-    sleep(0.016) -- ~60 FPS
+    sleep(0.016) -- ~60 FPS, заодно выполняет события кнопки
 end

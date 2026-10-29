@@ -9,7 +9,12 @@ lua = LuaRuntime(unpack_returned_tuples=True)
 def load_script(lua_code, window: ShiftWindow):
     drawer.Drawer(lua, window)
 
-    lua.globals()["sleep"] = time.sleep
+    def sleep(seconds):
+        # пауза + выполнение событий (клики и т.п.) в Lua-потоке
+        time.sleep(seconds)
+        drawer.run_events()
+
+    lua.globals()["sleep"] = sleep
 
     try:
         lua.execute(lua_code)

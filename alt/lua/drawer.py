@@ -1,25 +1,62 @@
 from lupa import LuaRuntime, LuaError
 from alt.data import  *
 from ui.window import ShiftWindow
+import mouse
 
 class button:
     def __init__(self, x=0, y=0, text="Hello world!"):
         self.x = x
         self.y = y
         self.text = text
+        self.width = 150
+        self.height = 50
+        self.font = "Calibri"
+        self.style = "Regular"
+        self.size = 20
+        self.border_corner = 10
+        self.text_align = "center"
         self.index = len(drawer_tasks)
+
+        self._listeners = {}
+        self._hover = False
+
+        # Хуки библиотеки mouse вызываются из её потока: сами они Lua не трогают,
+        # а только кладут события в очередь (см. trigger / run_events).
+        mouse.hook(self.on_selected)
+        mouse.on_click(self.on_left_click)
+        mouse.on_right_click(self.on_right_click)
 
         drawer_tasks.append({
             "type": "button",
             "position": {"x": x, "y": y},
             "text": self.text,
-            "color": (255,255,255),
-            "text_color": (255,255,255),
-            "width": 150,
-            "height": 50,
-            "font": "Calibri",
-            "style": "Regular",
+            "color": (255, 255, 255),
+            "text_color": (0, 0, 0),
+            "width": self.width,
+            "height": self.height,
+            "font": self.font,
+            "font_style": self.style,
+            "font_size": self.size,
+            "border_corner": self.border_corner,
+            "text_align": self.text_align,
         })
+
+    def event(self, event_name, callback):
+        """Подписка на событие: on_selected, on_deselected, on_left_click, on_right_click."""
+        self._listeners.setdefault(event_name, []).append(callback)
+
+    def trigger(self, event_name, *args):
+        """Вызывается из потока хука мыши: не запускает Lua сразу (дедлок с циклом скрипта),
+        а ставит обработчики в очередь. Выполняет их run_events() из Lua-потока (внутри sleep)."""
+        for callback in list(self._listeners.get(event_name, [])):
+            events.append((callback, args))
+
+    def _over(self):
+        """Курсор над кнопкой? Координаты берём из Qt (относительно страницы), а не экранные."""
+        m = mouse_state
+        return bool(m["inside"]
+                    and self.x <= m["x"] < self.x + self.width
+                    and self.y <= m["y"] < self.y + self.height)
 
     def set_color(self, color="#ffffff"):
         if isinstance(color, str) and color.startswith("#"):
@@ -47,6 +84,7 @@ class button:
         if y is None:
             y = self.y
 
+        self.x, self.y = x, y
         drawer_tasks[self.index]["position"] = {"x": x, "y": y}
 
     def set_size(self, width, height):
@@ -57,8 +95,9 @@ class button:
             })
             return
 
-        drawer_tasks[self.index]["width"], self.width = width
-        drawer_tasks[self.index]["height"], self.height = height
+        self.width, self.height = width, height
+        drawer_tasks[self.index]["width"] = width
+        drawer_tasks[self.index]["height"] = height
 
     def set_font_style(self, font, style, size):
         if font is None or style is None or size is None:
@@ -68,9 +107,10 @@ class button:
             })
             return
 
-        drawer_tasks[self.index]["font"], self.font = font
-        drawer_tasks[self.index]["style"], self.style = style
-        drawer_tasks[self.index]["size"], self.size = size
+        self.font, self.style, self.size = font, style, size
+        drawer_tasks[self.index]["font"] = font
+        drawer_tasks[self.index]["font_style"] = style
+        drawer_tasks[self.index]["font_size"] = size
 
     def auto_font_size(self, margin):
         width, height = self.width, self.height
@@ -87,7 +127,7 @@ class button:
 
         self.size = font_size
 
-        drawer_tasks[self.index]["size"] = font_size
+        drawer_tasks[self.index]["font_size"] = font_size
 
     def set_text(self, text):
         if text is None:
@@ -122,6 +162,33 @@ class button:
         self.text_align = val
         drawer_tasks[self.index]["text_align"] = self.text_align
 
+    def on_selected(self, _event):
+        """Хук любого события мыши: сообщает о входе курсора на кнопку и выходе с неё."""
+        over = self._over()
+        if over != self._hover:
+            self._hover = over
+            self.trigger("on_selected" if over else "on_deselected")
+
+    def on_left_click(self):
+        if self._over():
+            self.trigger("on_left_click")
+
+    def on_right_click(self):
+        if self._over():
+            self.trigger("on_right_click")
+
+
+def run_events():
+    """Выполняет накопленные события (обработчики из Lua). Вызывать только из Lua-потока."""
+    while events:
+        callback, args = events.pop(0)
+        try:
+            callback(*args)
+        except Exception as e:
+            console_messages.append({
+                "type": "error",
+                "message": f"Error in event handler: {e}"
+            })
 
 
 class Drawer:
@@ -132,11 +199,17 @@ class Drawer:
 
         lua.globals()['drawer'] = {
             "draw_text": self.draw_text,
+            "button": button,
             "redraw_text": self.redraw_text,
             "paste_image": self.paste_image,
             "fill_background": self.fill_background,
             "get_size_screen": self.get_size_screen,
+            "get_mouse": self.get_mouse,
         }
+
+    def get_mouse(self):
+        m = mouse_state
+        return m["x"], m["y"], m["down"], m["inside"]
 
     def get_size_screen(self):
         size = self.window.get_canvas_size()
