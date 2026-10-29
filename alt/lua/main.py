@@ -1,5 +1,5 @@
 from lupa import LuaRuntime, LuaError
-from alt.lua import drawer
+from alt.lua import drawer, cursor
 from alt.data import *
 from ui.window import ShiftWindow
 import time
@@ -8,9 +8,9 @@ lua = LuaRuntime(unpack_returned_tuples=True)
 
 def load_script(lua_code, window: ShiftWindow):
     drawer.Drawer(lua, window)
+    cursor.Cursor(lua, window)
 
     def sleep(seconds):
-        # пауза + выполнение событий (клики и т.п.) в Lua-потоке
         time.sleep(seconds)
         drawer.run_events()
 

@@ -20,8 +20,6 @@ class button:
         self._listeners = {}
         self._hover = False
 
-        # Хуки библиотеки mouse вызываются из её потока: сами они Lua не трогают,
-        # а только кладут события в очередь (см. trigger / run_events).
         mouse.hook(self.on_selected)
         mouse.on_click(self.on_left_click)
         mouse.on_right_click(self.on_right_click)
@@ -42,17 +40,13 @@ class button:
         })
 
     def event(self, event_name, callback):
-        """Подписка на событие: on_selected, on_deselected, on_left_click, on_right_click."""
         self._listeners.setdefault(event_name, []).append(callback)
 
     def trigger(self, event_name, *args):
-        """Вызывается из потока хука мыши: не запускает Lua сразу (дедлок с циклом скрипта),
-        а ставит обработчики в очередь. Выполняет их run_events() из Lua-потока (внутри sleep)."""
         for callback in list(self._listeners.get(event_name, [])):
             events.append((callback, args))
 
     def _over(self):
-        """Курсор над кнопкой? Координаты берём из Qt (относительно страницы), а не экранные."""
         m = mouse_state
         return bool(m["inside"]
                     and self.x <= m["x"] < self.x + self.width
@@ -77,13 +71,7 @@ class button:
 
         drawer_tasks[self.index]["text_color"] = color
 
-    def set_position(self, x, y):
-        if x is None:
-            x = self.x
-
-        if y is None:
-            y = self.y
-
+    def set_position(self, x=0, y=0):
         self.x, self.y = x, y
         drawer_tasks[self.index]["position"] = {"x": x, "y": y}
 
@@ -163,7 +151,6 @@ class button:
         drawer_tasks[self.index]["text_align"] = self.text_align
 
     def on_selected(self, _event):
-        """Хук любого события мыши: сообщает о входе курсора на кнопку и выходе с неё."""
         over = self._over()
         if over != self._hover:
             self._hover = over
@@ -179,7 +166,6 @@ class button:
 
 
 def run_events():
-    """Выполняет накопленные события (обработчики из Lua). Вызывать только из Lua-потока."""
     while events:
         callback, args = events.pop(0)
         try:

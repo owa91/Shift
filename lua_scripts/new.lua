@@ -1,98 +1,58 @@
--- Тестовая страница: кнопка с событиями и "точка", следящая за мышью.
 drawer.fill_background("#0B0C0F")
 
--- ───────────── Вспомогательное ─────────────
-local function hex_to_rgb(hex)
-    return tonumber(hex:sub(2, 3), 16), tonumber(hex:sub(4, 5), 16), tonumber(hex:sub(6, 7), 16)
-end
+local W, H = 220, 56
+local IDLE, HOVER, DISABLED = "#6C8CFF", "#FF8C42", "#3A3F4B"
+local DOT_COLORS = { "#FFFFFF", "#FF3B30", "#34C759", "#007AFF", "#FFCC00", "#AF52DE" }
 
--- Плавная смесь двух цветов: t = 0 -> a, t = 1 -> b
-local function lerp_color(a, b, t)
-    local ar, ag, ab = hex_to_rgb(a)
-    local br, bg, bb = hex_to_rgb(b)
-    return string.format("#%02X%02X%02X",
-        math.floor(ar + (br - ar) * t + 0.5),
-        math.floor(ag + (bg - ag) * t + 0.5),
-        math.floor(ab + (bb - ab) * t + 0.5))
+local function lerp(a, b, t)
+    local out = "#"
+    for i = 2, 6, 2 do
+        local x, y = tonumber(a:sub(i, i + 1), 16), tonumber(b:sub(i, i + 1), 16)
+        out = out .. string.format("%02X", math.floor(x + (y - x) * t + 0.5))
+    end
+    return out
 end
-
--- ───────────── Кнопка ─────────────
-local BTN_W, BTN_H = 220, 56
-local COLOR_IDLE     = "#6C8CFF"
-local COLOR_HOVER    = "#FF8C42"
-local COLOR_DISABLED = "#3A3F4B"
 
 local btn = drawer.button(0, 0, "Нажми меня")
-btn:set_size(BTN_W, BTN_H)
+btn:set_size(W, H)
 btn:set_font_style("Calibri", "Bold", 22)
 btn:set_border_corner(14)
-btn:set_color(COLOR_IDLE)
+btn:set_color(IDLE)
 btn:set_text_color("#FFFFFF")
-btn:set_text_align("center")
 
-local hover_t = 0          -- 0..1, прогресс анимации наведения
-local HOVER_SPEED = 0.12   -- шаг анимации за кадр
-local hovered = false
-local btn_disabled = false
+local hovered, disabled, t = false, false, 0
 
--- События кнопки (выполняются в этом же потоке, внутри sleep)
 btn:event("on_selected", function() hovered = true end)
 btn:event("on_deselected", function() hovered = false end)
 btn:event("on_left_click", function()
-    if btn_disabled then return end
-    btn_disabled = true
-    hovered = false
+    disabled, hovered = true, false
     btn:set_text("Заблокировано")
-    btn:set_color(COLOR_DISABLED)
+    btn:set_color(DISABLED)
     btn:set_text_color("#7A8090")
 end)
 
--- ───────────── Точка (большой символ ●) ─────────────
-local DOT_SIZE = 120
-local DOT_Y_OFFSET = DOT_SIZE * 0.67   -- центр глифа ● по вертикали (Calibri)
-local DOT_COLORS = { "#FFFFFF", "#FF3B30", "#34C759", "#007AFF", "#FFCC00", "#AF52DE" }
-local dot_i = 1
-
-local dot = drawer.draw_text(-1000, -1000, "●", DOT_SIZE, "Calibri", "Regular", DOT_COLORS[dot_i], false, 1.0, "center")
-
--- ───────────── Главный цикл ─────────────
-local btn_x, btn_y = 0, 0
-local was_down = false
+local dot = drawer.draw_text(-1000, -1000, "●", 120, "Calibri", "Regular", DOT_COLORS[1], false, 1.0, "center")
+local dot_i, was_down = 1, false
 
 while true do
-    local screen_w, screen_h = drawer.get_size_screen()
+    local sw, sh = drawer.get_size_screen()
     local mx, my, down, inside = drawer.get_mouse()
 
-    -- кнопка по центру экрана
-    local nx, ny = (screen_w - BTN_W) / 2, (screen_h - BTN_H) / 2
-    if nx ~= btn_x or ny ~= btn_y then
-        btn_x, btn_y = nx, ny
-        btn:set_position(btn_x, btn_y)
-    end
+    btn:set_position((sw - W) / 2, (sh - H) / 2)
 
-    -- плавное наведение (пока кнопка не заблокирована)
-    if not btn_disabled then
-        local target = hovered and 1 or 0
-        if hover_t < target then hover_t = math.min(target, hover_t + HOVER_SPEED)
-        elseif hover_t > target then hover_t = math.max(target, hover_t - HOVER_SPEED) end
-        btn:set_color(lerp_color(COLOR_IDLE, COLOR_HOVER, hover_t))
+    if not disabled then
+        t = math.max(0, math.min(1, t + (hovered and 0.12 or -0.12)))
+        btn:set_color(lerp(IDLE, HOVER, t))
     end
-
-    -- точка следует за курсором, при нажатии меняет цвет
-    local pressed = down and not was_down
-    was_down = down
 
     local props = {}
-    if inside then
-        props.position = { x = mx, y = my - DOT_Y_OFFSET }
-    end
-    if pressed then
+    if inside then props.position = { x = mx, y = my - 80 } end
+    if down and not was_down then
         dot_i = dot_i % #DOT_COLORS + 1
         props.color = DOT_COLORS[dot_i]
     end
-    if props.position or props.color then
-        drawer.redraw_text(dot, props)
-    end
+    was_down = down
+    drawer.redraw_text(dot, props)
 
-    sleep(0.016) -- ~60 FPS, заодно выполняет события кнопки
+    sleep(0.016)
 end

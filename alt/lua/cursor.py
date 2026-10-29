@@ -34,7 +34,7 @@ class Cursor:
 
         return x, y
 
-    def on_move(self):
+    def on_move(self, _):
         x, y = mouse.get_position()
 
         if self.last_pos == [x, y]:
