@@ -1,12 +1,13 @@
 from lupa import LuaRuntime, LuaError
 from alt.lua import drawer
 from alt.data import *
+from ui.window import ShiftWindow
 import time
 
 lua = LuaRuntime(unpack_returned_tuples=True)
 
-def load_script(lua_code):
-    drawer.Drawer(lua)
+def load_script(lua_code, window: ShiftWindow):
+    drawer.Drawer(lua, window)
 
     lua.globals()["sleep"] = time.sleep
 

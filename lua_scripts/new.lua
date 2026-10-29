@@ -1,44 +1,55 @@
-index_t = drawer.draw_text(0, 0, "QPMA LOX", 300, "Bastion", "Bold", "#FFFFFF", false, 1.0, "left")
-index_u = drawer.draw_text(0, 400, "И урод", 100, "Calibri", "Italic", "#FFFFFF", false, 1.0, "left")
+-- Анимация "DVD-плеер": логотип летает по экрану и отскакивает от краёв.
+drawer.fill_background("#000000")
 
+local text      = "DVD"
+local font_size = 80
+local colors    = { "#FF3B30", "#FF9500", "#FFCC00", "#34C759", "#00C7BE", "#007AFF", "#AF52DE", "#FF2D55" }
 
--- Вспомогательная функция для перевода HSL (цветового тона) в HEX
-local function hsl_to_hex(h, s, l)
-    local r, g, b
-    if s == 0 then
-        r, g, b = l, l, l
-    else
-        local function hue_to_rgb(p, q, t)
-            if t < 0 then t = t + 1 end
-            if t > 1 then t = t - 1 end
-            if t < 1/6 then return p + (q - p) * 6 * t end
-            if t < 1/2 then return q end
-            if t < 2/3 then return p + (q - p) * (2/3 - t) * 6 end
-            return p
-        end
-        local q = l < 0.5 and l * (1 + s) or l + s - l * s
-        local p = 2 * l - q
-        r = hue_to_rgb(p, q, h + 1/3)
-        g = hue_to_rgb(p, q, h)
-        b = hue_to_rgb(p, q, h - 1/3)
-    end
-    return string.format("#%02X%02X%02X", math.floor(r * 255), math.floor(g * 255), math.floor(b * 255))
+-- Примерный размер текста (измерения текста в API пока нет)
+local text_w = #text * font_size * 0.65
+local text_h = font_size * 1.2
+
+local x, y   = 100, 100
+local vx, vy = 3, 2.5          -- скорость в пикселях за кадр
+local color_i = 1
+
+local logo = drawer.draw_text(x, y, text, font_size, "Calibri", "Bold", colors[color_i], false, 1.0, "left")
+
+local function next_color()
+    color_i = color_i % #colors + 1
+    drawer.redraw_text(logo, { color = colors[color_i] })
 end
 
--- Основной цикл анимации
-local hue = 0
 while true do
-    -- Получаем текущий радужный цвет (насыщенность 100%, яркость 50%)
-    local rainbow_color = hsl_to_hex(hue, 1.0, 0.5)
-    
-    -- Перерисовываем текст
-    drawer.redraw_text(index_t, {color = rainbow_color})
-    
-    -- Шаг изменения цвета (чем меньше число, тем плавнее перелив)
-    hue = hue + 0.01
-    if hue > 1 then hue = 0 end
-    
-    -- Маленькая задержка для плавности (0.02–0.05 сек = ~30-50 FPS)
-    sleep(0.03) 
-end
+    local screen_w, screen_h = drawer.get_size_screen()
 
+    x = x + vx
+    y = y + vy
+
+    local bounced = false
+    if x <= 0 then
+        x = 0
+        vx = math.abs(vx)
+        bounced = true
+    elseif x + text_w >= screen_w then
+        x = math.max(0, screen_w - text_w)
+        vx = -math.abs(vx)
+        bounced = true
+    end
+
+    if y <= 0 then
+        y = 0
+        vy = math.abs(vy)
+        bounced = true
+    elseif y + text_h >= screen_h then
+        y = math.max(0, screen_h - text_h)
+        vy = -math.abs(vy)
+        bounced = true
+    end
+
+    if bounced then next_color() end
+
+    drawer.redraw_text(logo, { position = { x = x, y = y } })
+
+    sleep(0.016) -- ~60 FPS
+end

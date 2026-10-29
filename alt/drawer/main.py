@@ -53,6 +53,36 @@ def draw_text(canvas, text, x, y, font, color=(255, 255, 255), alpha=1.0, outlin
     if use_layer:
         canvas.restore()
 
+def draw_button(canvas: skia.Canvas, x, y, width, height, corners, color, text, font, font_style, font_size, text_color, text_align="center"):
+    rect = skia.Rect.MakeXYWH(x, y, width, height)
+    paint = skia.Paint(
+        AntiAlias=True,
+        Color=skia.Color(*color)
+    )
+
+    canvas.drawRoundRect(rect, corners, corners, paint)
+
+    style = style_map.get(font_style, skia.FontStyle.Normal())
+    font = cache.get_skia_font(font, style, font_size)
+
+    text = skia.Paint(
+        AntiAlias=True,
+        Color=skia.Color(*text_color)
+    )
+
+    width_t = font.measureText(text)
+    text_x = x
+    text_y = y + (font.getSize() / 3)
+    if text_align == "center":
+        text_x = rect.centerX() - (width_t / 2)
+    elif text_align == "right":
+        text_x = rect.right() - width_t
+    elif text_align == "left":
+        text_x = x + 10
+
+    canvas.drawString(text, text_x, text_y, font, style)
+
+
 
 def draw(window: w.ShiftWindow, tab_index):
     if window is None:

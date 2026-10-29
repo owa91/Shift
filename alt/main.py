@@ -14,7 +14,7 @@ def load(lua_code, app: QApplication, window, tab_index):
         "message": "Initializing the page"
     })
 
-    threading.Thread(target=lua.load_script, args=(lua_code,), daemon=True).start()
+    threading.Thread(target=lua.load_script, args=(lua_code, window), daemon=True).start()
 
     while True:
         start_time = time.time()

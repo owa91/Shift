@@ -34,7 +34,8 @@ from PyQt6.QtCore import (QEasingCurve, QEvent, QPointF, QRectF, Qt, QTimer,
                           QVariantAnimation, pyqtSignal)
 from PyQt6.QtGui import (QColor, QCursor, QFontMetrics, QImage, QKeySequence,
                          QPainter, QPainterPath, QPen, QPixmap, QRegion,
-                         QShortcut)
+                         QShortcut, QSurfaceFormat)
+from PyQt6.QtOpenGLWidgets import QOpenGLWidget
 from PyQt6.QtWidgets import (QApplication, QHBoxLayout, QLineEdit,
                              QMainWindow, QSizePolicy, QStackedWidget,
                              QVBoxLayout, QWidget)
@@ -43,6 +44,14 @@ try:
     import skia
 except Exception:
     skia = None
+
+# Формат OpenGL для аппаратного ускорения Skia (Ganesh): нужен stencil и альфа-канал.
+# Задаётся при импорте модуля, до создания первого QOpenGLWidget.
+_gl_fmt = QSurfaceFormat.defaultFormat()
+_gl_fmt.setStencilBufferSize(8)
+_gl_fmt.setAlphaBufferSize(8)
+_gl_fmt.setSwapInterval(0)
+QSurfaceFormat.setDefaultFormat(_gl_fmt)
 
 Curve = QEasingCurve.Type
 Align = Qt.AlignmentFlag
@@ -806,6 +815,10 @@ class ContentStack(QStackedWidget):
         r = self.bottom_radius
         for i in range(self.count()):
             page = self.widget(i)
+            if isinstance(page, QOpenGLWidget):
+                page.clearMask()
+                page.update()
+                continue
             if r > 0:
                 path = corner_path(QRectF(self.rect()), 0.0, max(r - 1.0, 0.0))
                 page.setMask(QRegion(path.toFillPolygon().toPolygon()))
@@ -913,12 +926,14 @@ def _convert_to_qimage(image) -> QImage | None:
     return None
 
 
-class QtImage(QWidget):
+class QtImage(QOpenGLWidget):
     """Область страницы браузера.
-    Отображает холст страницы, отрисованный движком Alt (Skia).
-    Использует разделяемый буфер памяти (Zero-Copy) для прямой отрисовки Skia в QImage без копирований.
-    Полностью совместима с прозрачностью окна, системным размытием Windows (Blur)
-    и скруглением углов."""
+    Отображает холст страницы, отрисованный движком Alt (Skia) на видеокарте:
+    Skia работает через OpenGL (Ganesh), кадр рисуется в GPU-текстуру и
+    выводится в фреймбуфер виджета без копирования пикселей в оперативную память.
+    Скругление нижних углов делается клиппингом в Skia (маски QOpenGLWidget не используются)."""
+
+    _GL_RGBA8 = 0x8058
 
     def __init__(self, text: str = "", image: QImage | None = None, parent=None):
         super().__init__(parent)
@@ -926,100 +941,170 @@ class QtImage(QWidget):
         self._image: QImage | None = None
         self._draw_callback = None
 
-        # Разделяемый буфер (Zero-Copy) между Skia Surface и QImage
+        # GPU-ресурсы Skia (создаются в initializeGL, когда контекст OpenGL готов)
+        self._gr = None                 # skia.GrDirectContext
+        self._gpu_surface = None        # offscreen-поверхность в VRAM, в неё рисует движок
+        self._fbo_surface = None        # поверхность поверх фреймбуфера виджета
+        self._fbo_key = None
         self._buf_w: int = 0
         self._buf_h: int = 0
-        self._buffer: bytearray | None = None
-        self._surface = None
-        self._qimage: QImage | None = None
+        self._frame_ready = False       # в GPU-поверхности есть готовый кадр
 
         if image is not None:
             self.set_image(image)
 
-    def _reallocate_buffer(self, w: int, h: int) -> None:
-        """Перевыделяет разделяемый буфер пикселей только при изменении размеров виджета."""
-        w = max(1, int(w))
-        h = max(1, int(h))
-        self._buf_w = w
-        self._buf_h = h
+    # --- жизненный цикл OpenGL
+    def initializeGL(self) -> None:
+        if skia is None:
+            return
+        try:
+            self._gr = skia.GrDirectContext.MakeGL()
+        except Exception:
+            self._gr = None
+        ctx = self.context()
+        if ctx is not None:
+            ctx.aboutToBeDestroyed.connect(self._release_gpu)
 
-        if skia is not None:
-            self._buffer = bytearray(w * h * 4)
-            info = skia.ImageInfo.Make(
-                w, h,
-                skia.ColorType.kBGRA_8888_ColorType,
-                skia.AlphaType.kPremul_AlphaType,
-            )
-            self._surface = skia.Surface.MakeRasterDirect(info, self._buffer, w * 4)
-            if self._surface is not None:
-                c = Theme.CONTENT
-                self._surface.getCanvas().clear(skia.Color(c.red(), c.green(), c.blue(), c.alpha()))
-            self._qimage = QImage(
-                self._buffer,
-                w,
-                h,
-                w * 4,
-                QImage.Format.Format_ARGB32_Premultiplied,
-            )
-        else:
-            self._buffer = None
-            self._surface = None
-            self._qimage = None
+    def _release_gpu(self) -> None:
+        """Освобождает ресурсы Skia, пока контекст OpenGL ещё жив."""
+        self._gpu_surface = None
+        self._fbo_surface = None
+        self._fbo_key = None
+        if self._gr is not None:
+            try:
+                self._gr.abandonContext()
+            except Exception:
+                pass
+            self._gr = None
 
-    def get_canvas(self):
-        """Возвращает Skia Canvas, привязанный напрямую к разделяемому буферу (Zero-Copy)."""
-        w = self.width()
-        h = self.height()
+    def _widget_size(self) -> tuple[int, int]:
+        w, h = self.width(), self.height()
         if w <= 1 or h <= 1:
             if self.parentWidget() and self.parentWidget().width() > 1:
-                w = self.parentWidget().width()
-                h = self.parentWidget().height()
+                w, h = self.parentWidget().width(), self.parentWidget().height()
             elif self.window() and self.window().width() > 1:
                 w = self.window().width()
                 h = max(1, self.window().height() - (Theme.TAB_H + Theme.TOOLBAR_H + 2))
             else:
-                w = 1280
-                h = 700
+                w, h = 1280, 700
+        return max(1, int(w)), max(1, int(h))
 
-        if self._surface is None or self._buf_w != w or self._buf_h != h:
-            self._reallocate_buffer(w, h)
+    def _phys_size(self, w: int, h: int) -> tuple[int, int]:
+        """Размер в физических пикселях (с учётом масштаба экрана): рисуем 1:1, без растягивания."""
+        dpr = self.devicePixelRatioF()
+        return max(1, round(w * dpr)), max(1, round(h * dpr))
 
-        if self._surface is not None:
-            return self._surface.getCanvas()
-        return None
+    def _ensure_gpu_surface(self, w: int, h: int) -> bool:
+        """Создаёт (или пересоздаёт при смене размера) GPU-поверхность. Контекст должен быть активен."""
+        if self._gr is None:
+            return False
+        pw, ph = self._phys_size(w, h)
+        if self._gpu_surface is None or self._buf_w != pw or self._buf_h != ph:
+            info = skia.ImageInfo.MakeN32Premul(pw, ph)
+            self._gpu_surface = skia.Surface.MakeRenderTarget(self._gr, skia.Budgeted.kNo, info)
+            self._buf_w, self._buf_h = pw, ph
+            if self._gpu_surface is not None:
+                c = Theme.CONTENT
+                self._gpu_surface.getCanvas().clear(skia.Color(c.red(), c.green(), c.blue(), c.alpha()))
+        return self._gpu_surface is not None
+
+    def get_canvas(self):
+        """Возвращает Skia Canvas, рисующий в GPU-текстуру. Делает контекст OpenGL активным;
+        после рисования обязательно вызвать render_done()."""
+        if skia is None or not self.isValid() or not self.isVisible():
+            return None
+        self.makeCurrent()
+        if self._gr is None:
+            self.doneCurrent()
+            return None
+        self._gr.resetContext()
+        w, h = self._widget_size()
+        if not self._ensure_gpu_surface(w, h):
+            self.doneCurrent()
+            return None
+        return self._scaled_canvas()
+
+    def _scaled_canvas(self):
+        """Canvas с масштабом экрана: движок рисует в логических координатах, пиксели получаются чёткими."""
+        canvas = self._gpu_surface.getCanvas()
+        canvas.resetMatrix()
+        dpr = self.devicePixelRatioF()
+        canvas.scale(dpr, dpr)
+        return canvas
 
     def render_done(self) -> None:
-        """Сигнализирует о готовности кадра в буфере и запрашивает перерисовку виджета."""
+        """Кадр нарисован в GPU-текстуре: отправляем команды на видеокарту и просим перерисовать виджет."""
+        if self._gr is not None and self.isValid():
+            self._gr.flushAndSubmit()
+            self._frame_ready = True
+            self.doneCurrent()
         self.update()
 
-    def resizeEvent(self, e):
-        super().resizeEvent(e)
-        w = max(1, e.size().width())
-        h = max(1, e.size().height())
-        if w != self._buf_w or h != self._buf_h:
-            self._reallocate_buffer(w, h)
+    def resizeGL(self, w: int, h: int) -> None:
+        self._fbo_surface = None
+        self._fbo_key = None
 
-    def paintEvent(self, _):
+    # --- вывод кадра во фреймбуфер
+    def _get_fbo_surface(self):
+        pw, ph = self._phys_size(self.width(), self.height())
+        fbo = int(self.defaultFramebufferObject())
+        key = (fbo, pw, ph)
+        if self._fbo_surface is None or self._fbo_key != key:
+            fb_info = skia.GrGLFramebufferInfo(fbo, self._GL_RGBA8)
+            target = skia.GrBackendRenderTarget(pw, ph, 0, 8, fb_info)
+            self._fbo_surface = skia.Surface.MakeFromBackendRenderTarget(
+                self._gr, target, skia.kBottomLeft_GrSurfaceOrigin,
+                skia.kRGBA_8888_ColorType, None)
+            self._fbo_key = key
+        return self._fbo_surface, pw, ph
+
+    def _paint_skia(self) -> None:
+        self._gr.resetContext()
+        w, h = self._widget_size()
+        if not self._ensure_gpu_surface(w, h):
+            return
+        if self._draw_callback is not None:
+            canvas = self._scaled_canvas()
+            try:
+                c = Theme.CONTENT
+                canvas.clear(skia.Color(c.red(), c.green(), c.blue(), c.alpha()))
+                self._draw_callback(canvas)
+            except Exception:
+                pass
+
+        surf, pw, ph = self._get_fbo_surface()
+        if surf is None:
+            return
+        out = surf.getCanvas()
+        out.clear(skia.ColorTRANSPARENT)
+        out.save()
+        r = float(getattr(self.parentWidget(), "bottom_radius", 0.0)) * self.devicePixelRatioF()
+        if r > 0:
+            rrect = skia.RRect()
+            zero = skia.Point(0, 0)
+            rad = skia.Point(r, r)
+            rrect.setRectRadii(skia.Rect.MakeWH(pw, ph), [zero, zero, rad, rad])
+            out.clipRRect(rrect, True)
+        image = self._gpu_surface.makeImageSnapshot()
+        out.drawImage(image, 0, 0)
+        out.restore()
+        self._gr.flushAndSubmit()
+
+    def paintGL(self) -> None:
+        use_skia = (skia is not None and self._gr is not None and self._image is None
+                    and (self._draw_callback is not None or self._frame_ready))
+        if use_skia:
+            self._paint_skia()
+            return
+
         p = QPainter(self)
-        if self._draw_callback is not None and skia is not None:
-            canvas = self.get_canvas()
-            if canvas is not None:
-                try:
-                    c = Theme.CONTENT
-                    canvas.clear(skia.Color(c.red(), c.green(), c.blue(), c.alpha()))
-                    self._draw_callback(canvas)
-                except Exception:
-                    pass
-            if self._qimage is not None and not self._qimage.isNull():
-                p.drawImage(0, 0, self._qimage)
-        elif self._image is not None and not self._image.isNull():
+        if self._image is not None and not self._image.isNull():
             p.drawImage(0, 0, self._image)
-        elif self._qimage is not None and not self._qimage.isNull():
-            p.drawImage(0, 0, self._qimage)
-        elif self._text:
+        else:
             p.fillRect(self.rect(), Theme.CONTENT)
-            p.setPen(Theme.TEXT_DIM)
-            p.drawText(self.rect(), Align.AlignCenter, self._text)
+            if self._text:
+                p.setPen(Theme.TEXT_DIM)
+                p.drawText(self.rect(), Align.AlignCenter, self._text)
 
     def set_draw_callback(self, callback) -> None:
         self._draw_callback = callback
@@ -1041,7 +1126,7 @@ class QtImage(QWidget):
                 canvas.drawPicture(image)
                 self._image = None
                 self._draw_callback = None
-                self.update()
+                self.render_done()
                 return
 
         self._image = _convert_to_qimage(image)
@@ -1057,7 +1142,15 @@ class QtImage(QWidget):
     def image(self) -> QImage | None:
         if self._image is not None:
             return self._image
-        return self._qimage
+        if self._gr is not None and self._gpu_surface is not None and self.isValid():
+            self.makeCurrent()
+            try:
+                self._gr.resetContext()
+                img = self._gpu_surface.makeImageSnapshot()
+                return _convert_to_qimage(img)
+            finally:
+                self.doneCurrent()
+        return None
 
     def get_canvas_size(self) -> CanvasSize:
         w = self.width()
