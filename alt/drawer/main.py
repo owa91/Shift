@@ -83,6 +83,22 @@ def draw_button(canvas: skia.Canvas, x, y, width, height, corners, color, text, 
     canvas.drawString(text, text_x, text_y, font, text_paint)
 
 
+def draw_not_animated_image(canvas: skia.Canvas, x, y, width, height, bytes_data, random_id):
+    image =  None
+    if random_id in cache.cache["images"]:
+        image = cache.cache["images"][random_id]
+    else:
+        data = skia.Data.MakeWithoutCopy(bytes_data)
+        image = skia.Image.MakeFromEncoded(data)
+
+        cache.cache["images"][random_id] = image
+
+    sampling = skia.SamplingOptions(skia.FilterMode.kLinear)
+
+    dest_rect = skia.Rect(float(x), float(y), float(x + width), float(y + height))
+
+    canvas.drawImageRect(image, dest_rect, sampling, None)
+
 
 def draw(window: w.ShiftWindow, tab_index):
     if window is None:
@@ -156,6 +172,23 @@ def draw(window: w.ShiftWindow, tab_index):
                     "type": "warn",
                     "message": e,
                 })
+        elif task["type"] == "image":
+            try:
+                draw_not_animated_image(
+                    canvas,
+                    task["x"],
+                    task["y"],
+                    task["width"],
+                    task["height"],
+                    task["bytes"],
+                    task["random_index"]
+                )
+            except Exception as e:
+                console_messages.append({
+                    "type": "warn",
+                    "message": e,
+                })
+                print(e)
 
     window.render_done(tab_index)
     return True

@@ -3,6 +3,7 @@ import skia
 cache = {
     "fonts": {},
     "skia_fonts": {},
+    "images": {}
 }
 
 def get_font(name, style):

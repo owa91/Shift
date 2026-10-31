@@ -6,6 +6,7 @@ import threading
 from PyQt6.QtWidgets import QApplication
 
 
+
 def load(lua_code, app: QApplication, window, tab_index):
     global fps
 

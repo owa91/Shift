@@ -1,7 +1,18 @@
 from lupa import LuaRuntime, LuaError
 from alt.data import  *
+from alt.caching import image as caching_image
 from ui.window import ShiftWindow
 import mouse
+from pathlib import Path
+import random
+
+def _rgb(color):
+    if isinstance(color, str) and color.startswith("#"):
+        h = color.lstrip("#")
+        return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+    if hasattr(color, "values"):
+        return list(color.values())
+    return color
 
 class button:
     def __init__(self, x=0, y=0, text="Hello world!"):
@@ -53,23 +64,10 @@ class button:
                     and self.y <= m["y"] < self.y + self.height)
 
     def set_color(self, color="#ffffff"):
-        if isinstance(color, str) and color.startswith("#"):
-            h = color.lstrip("#")
-            color = tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
-        elif hasattr(color, "values"):
-            color = list(color.values())
-
-
-        drawer_tasks[self.index]["color"] = color
+        drawer_tasks[self.index]["color"] = _rgb(color)
 
     def set_text_color(self, color="#ffffff"):
-        if isinstance(color, str) and color.startswith("#"):
-            h = color.lstrip("#")
-            color = tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
-        elif hasattr(color, "values"):
-            color = list(color.values())
-
-        drawer_tasks[self.index]["text_color"] = color
+        drawer_tasks[self.index]["text_color"] = _rgb(color)
 
     def set_position(self, x=0, y=0):
         self.x, self.y = x, y
@@ -165,6 +163,131 @@ class button:
             self.trigger("on_right_click")
 
 
+class text:
+    def __init__(self, x=0, y=0, text="", font_size=14, font="Calibri", font_style="Regular", color="#ffffff", align="left"):
+        self.task = {
+            "index": -1,
+            "type": "text",
+            "position": {"x": x, "y": y},
+            "text": text,
+            "font": {"font": font, "size": font_size, "style": font_style},
+            "outline": None,
+            "transparency": 1,
+            "align": align,
+            "color": _rgb(color),
+        }
+        drawer_tasks.append(self.task)
+
+    def set_text(self, value):
+        self.task["text"] = value
+
+    def set_color(self, color="#ffffff"):
+        self.task["color"] = _rgb(color)
+
+    def set_position(self, x=0, y=0):
+        self.task["position"] = {"x": x, "y": y}
+
+    def set_font_style(self, font, style, size):
+        self.task["font"] = {"font": font, "size": size, "style": style}
+
+    def set_align(self, align):
+        self.task["align"] = align
+
+    def set_transparency(self, value):
+        self.task["transparency"] = value
+
+    def set_outline(self, color, weight):
+        self.task["outline"] = {"color": _rgb(color), "weight": weight}
+
+    def remove(self):
+        if self.task in drawer_tasks:
+            drawer_tasks.remove(self.task)
+
+class image:
+    def __init__(self, x=0, y=0, source=""):
+        self.x = x
+        self.y = y
+        self.source = source
+        self.width, self.height = 100, 100
+        self.index = len(drawer_tasks)
+        self.mapping = 1
+        self.loaded = False
+        self.bytes = None
+        self.random_index = random.randint(1, 1000000)
+
+        with Path("images/not-loaded.jpg").open("rb") as f:
+            self.bytes = f.read()
+
+
+        drawer_tasks.append({
+            "type": "image",
+            "x": self.x,
+            "y": self.y,
+            "loaded": self.loaded,
+            "bytes": self.bytes,
+            "width": self.width,
+            "height": self.height,
+            "mapping": self.mapping,
+            "random_index": self.random_index
+        })
+
+    def set_size(self, width=100, height=100):
+        self.width, self.height = width, height
+        drawer_tasks[self.index]["width"], drawer_tasks[self.index]["height"] = width, height
+
+    def type_mapping(self, val=0):
+        """
+        0 - stretch
+        1 - scale
+        """
+
+        if val < 0 or val > 1:
+            console_messages.append({
+                "type": "error",
+                "message": "value must be between 0 and 1",
+            })
+            return
+
+        self.mapping = val
+        drawer_tasks[self.index]["mapping"] = val
+
+    def change_source(self, source=""):
+        self.source = source
+        drawer_tasks[self.index]["source"] = source
+
+    def load(self):
+        status, val = 0, None
+
+        try:
+            status, val = caching_image.load_not_animated_and_cache(self.source, is_localfile)
+        except Exception as e:
+            print(e)
+            val = e
+
+        if status == 0:
+            print(val)
+            console_messages.append({
+                "type": "error",
+                "message": f"cannot load image. Cause: {val}",
+            })
+
+            with Path("images/error-image.jpg").open("rb") as f:
+                self.bytes = f.read()
+                self.random_index = random.randint(1, 1000000)
+                drawer_tasks[self.index]["random_index"] = self.random_index
+                drawer_tasks[self.index]["bytes"] = self.bytes
+            return
+
+        self.loaded, self.bytes = True, val
+        self.random_index = random.randint(1, 1000000)
+        drawer_tasks[self.index]["random_index"] = self.random_index
+        drawer_tasks[self.index]["bytes"] = self.bytes
+        drawer_tasks[self.index]["loaded"] = self.loaded
+
+
+
+
+
 def run_events():
     while events:
         callback, args = events.pop(0)
@@ -184,10 +307,9 @@ class Drawer:
         self.window = window
 
         lua.globals()['drawer'] = {
-            "draw_text": self.draw_text,
             "button": button,
-            "redraw_text": self.redraw_text,
-            "paste_image": self.paste_image,
+            "text": text,
+            "image": image,
             "fill_background": self.fill_background,
             "get_size_screen": self.get_size_screen,
             "get_mouse": self.get_mouse,
@@ -199,74 +321,9 @@ class Drawer:
 
     def get_size_screen(self):
         size = self.window.get_canvas_size()
-
+        if not size or size.width is None or size.height is None:
+            return 1280, 700
         return size.width, size.height
-
-    def redraw_text(self, index, to_change):
-        task = None
-        to_change = dict(to_change)
-
-        for ftask in drawer_tasks:
-            if ftask["type"] == "text" and ftask["index"] == index:
-                task = ftask
-
-        if task is None:
-            console_messages.append({
-                "type": "error",
-                "message": f"The text with index {index} doesn't exist"
-            })
-            return
-
-        for name, value in to_change.items():
-            if task.get(name) is None:
-                console_messages.append({
-                    "type": "warn",
-                    "message": f"Cannot find a value with name {name} in the text with index {index}"
-                })
-                continue
-
-            if name == "color":
-                if isinstance(value, str) and value.startswith("#"):
-                    h = value.lstrip("#")
-                    value = tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
-                elif hasattr(value, "values"):
-                    value = list(value.values())
-            elif name == "position" and hasattr(value, "keys"):
-                value = {"x": value["x"], "y": value["y"]}
-
-            task[name] = value
-
-        return self.texts
-
-    def draw_text(self, x, y, text, font_size=14, font="Calibri", font_style="Regular", color="#ffffff", outline=False, transparency=1, align="left"):
-        try:
-            outline = dict(outline) if outline and not isinstance(outline, bool) else None
-            if isinstance(color, str) and color.startswith("#"):
-                h = color.lstrip("#")
-                color = tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
-            elif hasattr(color, "values"):
-                color = list(color.values())
-
-            self.texts += 1
-
-            drawer_tasks.append({
-                "index": self.texts,
-                "type": "text",
-                "position": {"x": x, "y": y},
-                "text": text,
-                "font": {"font": font, "size": font_size, "style": font_style},
-                "outline": outline,
-                "transparency": transparency,
-                "align": align,
-                "color": color
-            })
-
-            return self.texts
-        except Exception as e:
-            console_messages.append({
-                "type": "error",
-                "message": e
-            })
 
     def fill_background(self, color):
         if isinstance(color, str) and color.startswith("#"):
