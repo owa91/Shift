@@ -256,10 +256,16 @@ class image:
         drawer_tasks[self.index]["source"] = source
 
     def load(self):
+        with Path("images/loading.jpg").open("rb") as f:
+            self.bytes = f.read()
+            self.random_index = random.randint(1, 1000000)
+            drawer_tasks[self.index]["random_index"] = self.random_index
+            drawer_tasks[self.index]["bytes"] = self.bytes
+
         status, val = 0, None
 
         try:
-            status, val = caching_image.load_not_animated_and_cache(self.source, is_localfile)
+            status, val = caching_image.load_not_animated_and_cache(self.source, is_localfile, self.random_index)
         except Exception as e:
             print(e)
             val = e

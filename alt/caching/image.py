@@ -41,7 +41,7 @@ def decompress_acf_to_bytes(acf_bytes):
 
     return original_bytes, fmt
 
-def load_not_animated_and_cache(source: str, localfile):
+def load_not_animated_and_cache(source: str, localfile, randomindex):
     file = Path(os.path.expandvars(r"%TEMP%\Shift\images.arcf")) # .arcf - Alt Routing Caching File
 
     file.parent.mkdir(parents=True, exist_ok=True)
@@ -59,8 +59,9 @@ def load_not_animated_and_cache(source: str, localfile):
 
     if data and source in data:
         cache_file = data[source]
-        info = decompress_acf_to_bytes(cache_file)
-        return 1, info[0]
+        with open(cache_file, "rb") as f:
+            info = decompress_acf_to_bytes(f.read())
+            return 1, info[0]
 
     if not source.startswith("https://") and not localfile:
         return 0, "It isn't safety. Use https://"
@@ -151,7 +152,9 @@ def load_not_animated_and_cache(source: str, localfile):
         if not can_cache:
             return 0, f"{source} doesn't allowed cache and require to save cache. Administrator of this source has to set true values"
 
-        path = os.path.expandvars(f"%TEMP%/Shift/images/{time.time()}_{source}.acf") # acf - Alt Caching File
+        path = os.path.expandvars(f"%TEMP%/Shift/images/{time.time()}_{randomindex}.acf") # acf - Alt Caching File
+
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
 
         compress_bytes_to_acf(request.content, path)
 
