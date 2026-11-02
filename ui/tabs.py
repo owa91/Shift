@@ -52,6 +52,8 @@ def load(index, url: str, app):
                 window.set_image(frame, tab["index"])
         except StopIteration:
             timer.stop()
+        except Exception as e:
+            print("Error in render_next_frame:", e)
 
     timer.timeout.connect(render_next_frame)
     tab["timer"] = timer

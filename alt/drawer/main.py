@@ -1,8 +1,9 @@
 import skia
 import time
 from alt.data import *
+import alt.data as data
 from ui import window as w
-from alt.drawer import cache
+from alt.drawer import cache, screen_set
 
 style_map = {
     "Bold": skia.FontStyle.Bold(),
@@ -11,7 +12,7 @@ style_map = {
 }
 
 
-def draw_text(canvas, text, x, y, font, color=(255, 255, 255), alpha=1.0, outline=None, outline_w=0, align="left"):
+def draw_text(canvas: skia.Canvas, text, x, y, font, color=(255, 255, 255), alpha=1.0, outline=None, outline_w=0, align="left"):
     width = font.measureText(text)
     if align == "center":
         x -= width / 2
@@ -53,6 +54,12 @@ def draw_text(canvas, text, x, y, font, color=(255, 255, 255), alpha=1.0, outlin
     if use_layer:
         canvas.restore()
 
+    global elements_lower_screen
+
+    if y > canvas.imageInfo().height():
+        if y+100 > elements_lower_screen:
+            elements_lower_screen = y+100
+
 def draw_button(canvas: skia.Canvas, x, y, width, height, corners, color, text, font, font_style, font_size, text_color, text_align="center"):
     rect = skia.Rect.MakeXYWH(x, y, width, height)
     paint = skia.Paint(
@@ -82,6 +89,12 @@ def draw_button(canvas: skia.Canvas, x, y, width, height, corners, color, text, 
 
     canvas.drawString(text, text_x, text_y, font, text_paint)
 
+    global elements_lower_screen
+
+    if y > canvas.imageInfo().height():
+        if y + width + 100 > elements_lower_screen:
+            elements_lower_screen = y + width + 100
+
 
 def draw_not_animated_image(canvas: skia.Canvas, x, y, width, height, bytes_data, random_id):
     image =  None
@@ -98,6 +111,12 @@ def draw_not_animated_image(canvas: skia.Canvas, x, y, width, height, bytes_data
     dest_rect = skia.Rect(float(x), float(y), float(x + width), float(y + height))
 
     canvas.drawImageRect(image, dest_rect, sampling, None)
+
+    global elements_lower_screen
+
+    if y > canvas.imageInfo().height():
+        if y + width + 100 > elements_lower_screen:
+            elements_lower_screen = y + width + 100
 
 
 def draw(window: w.ShiftWindow, tab_index):
@@ -126,7 +145,43 @@ def draw(window: w.ShiftWindow, tab_index):
     else:
         canvas.clear(skia.Color(11, 12, 15, 255))
 
+    canvas_h = canvas.getLocalClipBounds().height()
+    max_y = 0
     for task in drawer_tasks:
+        pos = task.get("position")
+        if pos:
+            ty = pos.get("y", 0)
+            th = task.get("height", 0)
+            if 0 <= ty < 10000 and ty + th > max_y:
+                max_y = ty + th
+        elif "y" in task:
+            ty = task.get("y", 0)
+            th = task.get("height", 0)
+            if 0 <= ty < 10000 and ty + th > max_y:
+                max_y = ty + th
+
+    if max_y > canvas_h:
+        data.elements_lower_screen = int(max_y - canvas_h + 80)
+    else:
+        data.elements_lower_screen = 0
+
+    screen_set.update_pos_y(canvas)
+    cur_scroll_y = data.y_scroll_status.get("y", 0.0)
+
+    for task in drawer_tasks:
+        pos = task.get("position")
+        if pos:
+            ty = pos.get("y", 0)
+            th = task.get("height", 150)
+        else:
+            ty = task.get("y", 0)
+            th = task.get("height", 150)
+
+        # Skip off-screen elements (culling)
+        if ty < -500:
+            continue
+        if ty + cur_scroll_y + th < -150 or ty + cur_scroll_y > canvas_h + 150:
+            continue
         if task["type"] == "text":
             try:
                 style = style_map.get(task["font"]["style"], skia.FontStyle.Normal())

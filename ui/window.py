@@ -975,6 +975,19 @@ class QtImage(QOpenGLWidget):
     def leaveEvent(self, e):
         _alt_data.mouse_state["inside"] = False
 
+    def wheelEvent(self, e):
+        dy = e.angleDelta().y()
+        if dy != 0:
+            lines = 3
+            to_pixels = (dy / 120.0) * lines * 33
+            max_scroll = max(0, getattr(_alt_data, "elements_lower_screen", 0))
+            cur_target = _alt_data.y_scroll_status.get("target_y", _alt_data.y_scroll_status.get("y", 0.0))
+            if max_scroll > 0 or cur_target < 0:
+                new_target = max(-float(max_scroll), min(0.0, cur_target + to_pixels))
+                _alt_data.y_scroll_status["target_y"] = new_target
+                self.update()
+        e.accept()
+
     # --- жизненный цикл OpenGL
     def initializeGL(self) -> None:
         if skia is None:

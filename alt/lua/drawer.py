@@ -58,10 +58,14 @@ class button:
             events.append((callback, args))
 
     def _over(self):
+        if self.x < -500 or self.y < -500:
+            return False
         m = mouse_state
-        return bool(m["inside"]
-                    and self.x <= m["x"] < self.x + self.width
-                    and self.y <= m["y"] < self.y + self.height)
+        if not m["inside"]:
+            return False
+        scroll_y = y_scroll_status.get("y", 0)
+        return bool(self.x <= m["x"] < self.x + self.width
+                    and (self.y + scroll_y) <= m["y"] < (self.y + scroll_y) + self.height)
 
     def set_color(self, color="#ffffff"):
         drawer_tasks[self.index]["color"] = _rgb(color)
@@ -326,10 +330,13 @@ class Drawer:
         return m["x"], m["y"], m["down"], m["inside"]
 
     def get_size_screen(self):
-        size = self.window.get_canvas_size()
-        if not size or size.width is None or size.height is None:
+        try:
+            size = self.window.get_canvas_size()
+            if not size or size.width is None or size.height is None:
+                return 1280, 700
+            return size.width, size.height
+        except Exception:
             return 1280, 700
-        return size.width, size.height
 
     def fill_background(self, color):
         if isinstance(color, str) and color.startswith("#"):

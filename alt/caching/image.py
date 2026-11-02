@@ -170,13 +170,3 @@ def load_not_animated_and_cache(source: str, localfile, randomindex):
             pickle.dump(data, f)
 
     return 1, request.content
-
-
-
-
-
-
-
-
-
-    return request.content
