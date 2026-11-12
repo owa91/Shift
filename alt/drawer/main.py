@@ -95,9 +95,18 @@ def draw_button(canvas: skia.Canvas, x, y, width, height, corners, color, text, 
         if y + width + 100 > elements_lower_screen:
             elements_lower_screen = y + width + 100
 
+def draw_rectangle(canvas: skia.Canvas, x, y, width, height, corners_x, corners_y, color):
+    rect = skia.Rect.MakeXYWH(x, y, width, height)
+    paint = skia.Paint(
+        AntiAlias=True,
+        Color=skia.Color(*color)
+    )
+
+    canvas.drawRoundRect(rect, corners_x, corners_y, paint)
+
 
 def draw_not_animated_image(canvas: skia.Canvas, x, y, width, height, bytes_data, random_id):
-    image =  None
+    image = None
     if random_id in cache.cache["images"]:
         image = cache.cache["images"][random_id]
     else:
@@ -177,7 +186,6 @@ def draw(window: w.ShiftWindow, tab_index):
             ty = task.get("y", 0)
             th = task.get("height", 150)
 
-        # Skip off-screen elements (culling)
         if ty < -500:
             continue
         if ty + cur_scroll_y + th < -150 or ty + cur_scroll_y > canvas_h + 150:
@@ -237,6 +245,24 @@ def draw(window: w.ShiftWindow, tab_index):
                     task["height"],
                     task["bytes"],
                     task["random_index"]
+                )
+            except Exception as e:
+                console_messages.append({
+                    "type": "warn",
+                    "message": e,
+                })
+                print(e)
+        elif task["type"] == "rectangle":
+            try:
+                draw_rectangle(
+                    canvas,
+                    task["x"],
+                    task["y"],
+                    task["width"],
+                    task["height"],
+                    task["corners_x"],
+                    task["corners_y"],
+                    task["color"]
                 )
             except Exception as e:
                 console_messages.append({

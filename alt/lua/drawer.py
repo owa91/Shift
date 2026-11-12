@@ -235,6 +235,12 @@ class image:
             "random_index": self.random_index
         })
 
+    def set_position(self, x=0, y=0):
+        self.x = x
+        self.y = y
+
+        drawer_tasks[self.index]["x"], drawer_tasks[self.index]["y"] = self.x, self.y
+
     def set_size(self, width=100, height=100):
         self.width, self.height = width, height
         drawer_tasks[self.index]["width"], drawer_tasks[self.index]["height"] = width, height
@@ -294,9 +300,47 @@ class image:
         drawer_tasks[self.index]["bytes"] = self.bytes
         drawer_tasks[self.index]["loaded"] = self.loaded
 
+class rectangle:
+    def __init__(self, x=0, y=0, height=100, width=100):
+        self.x = x
+        self.y = y
+        self.height = height
+        self.width = width
+        self.corners_x = 0
+        self.corners_y = 0
+        self.color = _rgb("#ffffff")
 
+        self.index = len(drawer_tasks)
 
+        drawer_tasks.append({
+            "type": "rectangle",
+            "x": self.x,
+            "y": self.y,
+            "height": self.height,
+            "width": self.width,
+            "corners_x": self.corners_x,
+            "corners_y": self.corners_y,
+            "color": self.color
+        })
 
+    def set_position(self, x=0, y=0):
+        self.x = x
+        self.y = y
+
+        drawer_tasks[self.index]["x"], drawer_tasks[self.index]["y"] = self.x, self.y
+
+    def set_size(self, width=100, height=100):
+        self.width, self.height = width, height
+        drawer_tasks[self.index]["width"], drawer_tasks[self.index]["height"] = width, height
+
+    def set_corners(self, rx=0, ry=0):
+        self.corners_x = rx
+        self.corners_y = ry
+
+        drawer_tasks[self.index]["self.corners_x"], drawer_tasks[self.index]["self.corners_y"] = self.corners_x, self.corners_y
+
+    def set_color(self, color="#ffffff"):
+        drawer_tasks[self.index]["color"] = _rgb(color)
 
 def run_events():
     while events:
@@ -320,6 +364,7 @@ class Drawer:
             "button": button,
             "text": text,
             "image": image,
+            "rectangle": rectangle,
             "fill_background": self.fill_background,
             "get_size_screen": self.get_size_screen,
             "get_mouse": self.get_mouse,
