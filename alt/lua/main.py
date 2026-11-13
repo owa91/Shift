@@ -1,16 +1,18 @@
 from lupa import LuaRuntime, LuaError
-from alt.lua import drawer, cursor, screen
+from alt.lua import drawer, cursor, screen, n_requests
 from alt.data import *
 from ui.window import ShiftWindow
 import time
 import traceback
 
 lua = LuaRuntime(unpack_returned_tuples=True)
+lua.execute('collectgarbage("generational")')
 
 def load_script(lua_code, window: ShiftWindow):
     drawer.Drawer(lua, window)
     cursor.Cursor(lua, window)
     screen.Screen(lua, window)
+    n_requests.Requests(lua, window)
 
     def sleep(seconds):
         time.sleep(seconds)

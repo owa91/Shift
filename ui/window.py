@@ -977,6 +977,7 @@ class QtImage(QOpenGLWidget):
 
     def wheelEvent(self, e):
         dy = e.angleDelta().y()
+        _alt_data.mouse_state["wheel"] = _alt_data.mouse_state.get("wheel", 0.0) + dy / 120.0
         if dy != 0:
             lines = 3
             to_pixels = (dy / 120.0) * lines * 33

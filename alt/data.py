@@ -14,3 +14,7 @@ is_localfile = False
 cachingservice_settings = {
     "http_allowed": False, # When parameter "http_allowed" is True, then CachingService allows http protocol
 }
+
+requests_settings = {
+    "http_allowed": True, # When parameter "http_allowed" is True, then requests allows http protocol
+}

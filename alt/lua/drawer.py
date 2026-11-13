@@ -6,7 +6,9 @@ import mouse
 from pathlib import Path
 import random
 
-def _rgb(color):
+def _rgb(color, *rest):
+    if rest:
+        return (color, *rest[:2])
     if isinstance(color, str) and color.startswith("#"):
         h = color.lstrip("#")
         return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
@@ -67,11 +69,11 @@ class button:
         return bool(self.x <= m["x"] < self.x + self.width
                     and (self.y + scroll_y) <= m["y"] < (self.y + scroll_y) + self.height)
 
-    def set_color(self, color="#ffffff"):
-        drawer_tasks[self.index]["color"] = _rgb(color)
+    def set_color(self, color="#ffffff", *rest):
+        drawer_tasks[self.index]["color"] = _rgb(color, *rest)
 
-    def set_text_color(self, color="#ffffff"):
-        drawer_tasks[self.index]["text_color"] = _rgb(color)
+    def set_text_color(self, color="#ffffff", *rest):
+        drawer_tasks[self.index]["text_color"] = _rgb(color, *rest)
 
     def set_position(self, x=0, y=0):
         self.x, self.y = x, y
@@ -185,8 +187,8 @@ class text:
     def set_text(self, value):
         self.task["text"] = value
 
-    def set_color(self, color="#ffffff"):
-        self.task["color"] = _rgb(color)
+    def set_color(self, color="#ffffff", *rest):
+        self.task["color"] = _rgb(color, *rest)
 
     def set_position(self, x=0, y=0):
         self.task["position"] = {"x": x, "y": y}
@@ -339,8 +341,8 @@ class rectangle:
 
         drawer_tasks[self.index]["self.corners_x"], drawer_tasks[self.index]["self.corners_y"] = self.corners_x, self.corners_y
 
-    def set_color(self, color="#ffffff"):
-        drawer_tasks[self.index]["color"] = _rgb(color)
+    def set_color(self, color="#ffffff", *rest):
+        drawer_tasks[self.index]["color"] = _rgb(color, *rest)
 
 def run_events():
     while events:
@@ -368,7 +370,14 @@ class Drawer:
             "fill_background": self.fill_background,
             "get_size_screen": self.get_size_screen,
             "get_mouse": self.get_mouse,
+            "get_wheel": self.get_wheel,
         }
+
+    def get_wheel(self):
+        # wheel notches accumulated since the last call (positive = away from user)
+        v = mouse_state.get("wheel", 0.0)
+        mouse_state["wheel"] = 0.0
+        return v
 
     def get_mouse(self):
         m = mouse_state
@@ -404,6 +413,3 @@ class Drawer:
             })
 
         return True
-
-    def paste_image(self):
-        pass
