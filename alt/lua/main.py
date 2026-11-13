@@ -1,4 +1,4 @@
-from lupa import LuaRuntime, LuaError
+from lupa.lua55 import LuaRuntime, LuaError
 from alt.lua import drawer, cursor, screen, n_requests
 from alt.data import *
 from ui.window import ShiftWindow

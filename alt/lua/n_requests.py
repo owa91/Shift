@@ -1,4 +1,4 @@
-from lupa import LuaRuntime, LuaError
+from lupa.lua55 import LuaRuntime, LuaError
 from alt import data
 from ui.window import ShiftWindow
 import requests

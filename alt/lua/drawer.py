@@ -1,4 +1,4 @@
-from lupa import LuaRuntime, LuaError
+from lupa.lua55 import LuaRuntime, LuaError
 from alt.data import  *
 from alt.caching import image as caching_image
 from ui.window import ShiftWindow
