@@ -1,4 +1,4 @@
-from lupa.lua55 import LuaRuntime, LuaError
+from lupa.lua54 import LuaRuntime, LuaError
 from alt.data import  *
 from alt.caching import image as caching_image
 from ui.window import ShiftWindow
@@ -339,7 +339,7 @@ class rectangle:
         self.corners_x = rx
         self.corners_y = ry
 
-        drawer_tasks[self.index]["self.corners_x"], drawer_tasks[self.index]["self.corners_y"] = self.corners_x, self.corners_y
+        drawer_tasks[self.index]["corners_x"], drawer_tasks[self.index]["corners_y"] = self.corners_x, self.corners_y
 
     def set_color(self, color="#ffffff", *rest):
         drawer_tasks[self.index]["color"] = _rgb(color, *rest)

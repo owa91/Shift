@@ -1,5 +1,5 @@
 import time
-from lupa.lua55 import LuaRuntime, LuaError
+from lupa.lua54 import LuaRuntime, LuaError
 from alt import data
 from ui.window import ShiftWindow
 from pynput import mouse
