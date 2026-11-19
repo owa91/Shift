@@ -46,43 +46,52 @@ def load_not_animated_and_cache(source: str, localfile, randomindex):
 
     file.parent.mkdir(parents=True, exist_ok=True)
 
-    data = {}
+    cache_data = {}
     if file.exists():
         with file.open("rb") as f:
             try:
-                data = pickle.load(f)
+                cache_data = pickle.load(f)
             except Exception:
-                data = {}
+                cache_data = {}
     else:
         with file.open("wb") as f:
-            pickle.dump(data, f)
+            pickle.dump(cache_data, f)
 
-    if data and source in data:
-        cache_file = data[source]
-        with open(cache_file, "rb") as f:
-            info = decompress_acf_to_bytes(f.read())
-            return 1, info[0]
+    if cache_data and source in cache_data:
+        cache_file = cache_data[source]
+        if Path(cache_file).exists():
+            try:
+                with open(cache_file, "rb") as f:
+                    info = decompress_acf_to_bytes(f.read())
+                    return 1, info[0]
+            except Exception:
+                pass
 
-    if not source.startswith("https://") and not localfile:
-        return 0, "It isn't safety. Use https://"
-    elif localfile and source.startswith("local://"):
+    if localfile and source.startswith("local://"):
         type_file = None
 
         for type in not_animated_types:
-            if source.endswith(type):
+            if source.lower().endswith(type):
                 type_file = type
                 break
 
         if type_file is None:
             return 0, "Alt doesn't support this type of the file"
 
-        file = Path(source[len("local://"):])
+        local_path = Path(source[len("local://"):])
 
-        if not file.exists():
+        if not local_path.exists():
             return 0, "File doesn't exist"
 
-        with file.open("rb") as f:
-            return f.read()
+        with local_path.open("rb") as f:
+            return 1, f.read()
+
+    if not source.startswith("https://"):
+        if source.startswith("http://"):
+            if not localfile and not data.cachingservice_settings.get("http_allowed"):
+                return 0, "It isn't safety. Use https://"
+        else:
+            return 0, "It isn't safety. Use https://"
 
     index = len(network_requests)
 
@@ -94,20 +103,29 @@ def load_not_animated_and_cache(source: str, localfile, randomindex):
         "method": "GET"
     })
 
-    accept = ""
+    accept = ", ".join(f"image/{t[1:]}" for t in not_animated_types)
 
-    for type in not_animated_types:
-        accept += f"image/{type[1:]} "
-
-    request = requests.get(
-        source,
-        headers={
-            "User-Agent": f"Shift/{versionshift}, Alt/{version}, {platform.system()}/{platform.release()}",
-            "Accept": accept,
-            "Alt_Type-Script": "Local" if localfile is None else "Global",
-            "Alt_Created_By": "Alt.CachingService",
+    try:
+        request = requests.get(
+            source,
+            headers={
+                "User-Agent": f"Shift/{versionshift}, Alt/{version}, {platform.system()}/{platform.release()}",
+                "Accept": accept,
+                "Alt_Type-Script": "Local" if localfile else "Global",
+                "Alt_Created_By": "Alt.CachingService",
+            }
+        )
+    except Exception as e:
+        network_requests[index] = {
+            "endpoint": source,
+            "created_by": "Alt.CachingService",
+            "when": network_requests[index]["when"],
+            "status": -1,
+            "method": "GET",
+            "ping": (time.time() - network_requests[index]["when"]) * 1000,
+            "text": str(e),
         }
-    )
+        return 0, str(e)
 
     network_requests[index] = {
         "endpoint": source,
@@ -126,8 +144,8 @@ def load_not_animated_and_cache(source: str, localfile, randomindex):
         return 0, f"{source} return status {request.status_code}()"
 
     can_cache = True
-    image = Image.open(io.BytesIO(request.content))
-    type_request_file = image.format.lower()
+    with Image.open(io.BytesIO(request.content)) as image:
+        type_request_file = (image.format or "").lower()
     allowed = False
 
     for type in not_animated_types:
@@ -158,15 +176,18 @@ def load_not_animated_and_cache(source: str, localfile, randomindex):
 
         compress_bytes_to_acf(request.content, path)
 
-        read = file.open("rb")
-        data = pickle.load(read)
+        with file.open("rb") as read:
+            try:
+                cache_data = pickle.load(read)
+            except Exception:
+                cache_data = {}
 
-        if data is None:
-            data = {}
+        if cache_data is None:
+            cache_data = {}
 
-        data[source] = path
+        cache_data[source] = path
 
         with file.open("wb") as f:
-            pickle.dump(data, f)
+            pickle.dump(cache_data, f)
 
     return 1, request.content

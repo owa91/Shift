@@ -1,6 +1,6 @@
 from alt.lua import main as lua
 from alt.drawer import main as drawer
-from alt.data import *
+from alt import data
 import time
 import threading
 from PyQt6.QtWidgets import QApplication
@@ -8,9 +8,7 @@ from PyQt6.QtWidgets import QApplication
 
 
 def load(lua_code, app: QApplication, window, tab_index):
-    global fps
-
-    console_messages.append({
+    data.console_messages.append({
         "type": "Info",
         "message": "Initializing the page"
     })
@@ -25,4 +23,4 @@ def load(lua_code, app: QApplication, window, tab_index):
         yield surface
 
         elapsed = time.time() - start_time
-        fps = 1 / elapsed if elapsed > 0 else 0
+        data.fps = 1 / elapsed if elapsed > 0 else 0

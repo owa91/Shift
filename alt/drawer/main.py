@@ -12,6 +12,21 @@ style_map = {
 }
 
 
+def _to_skia_color(color, default=skia.ColorWHITE):
+    if isinstance(color, (tuple, list)):
+        if len(color) >= 3:
+            return skia.Color(*color[:4])
+    elif isinstance(color, str) and color.startswith("#"):
+        h = color.lstrip("#")
+        if len(h) == 3:
+            return skia.Color(*(int(c * 2, 16) for c in h))
+        if len(h) == 8:
+            return skia.Color(*(int(h[i:i + 2], 16) for i in (0, 2, 4, 6)))
+        if len(h) >= 6:
+            return skia.Color(*(int(h[i:i + 2], 16) for i in (0, 2, 4)))
+    return default
+
+
 def draw_text(canvas: skia.Canvas, text, x, y, font, color=(255, 255, 255), alpha=1.0, outline=None, outline_w=0, align="left"):
     width = font.measureText(text)
     if align == "center":
@@ -29,7 +44,7 @@ def draw_text(canvas: skia.Canvas, text, x, y, font, color=(255, 255, 255), alph
         canvas.saveLayerAlpha(rect, int(alpha_val * 255))
 
     if outline and outline_w > 0:
-        stroke_color = skia.Color(*outline) if isinstance(outline, (tuple, list)) else skia.ColorBLACK
+        stroke_color = _to_skia_color(outline, skia.ColorBLACK)
         stroke = skia.Paint(Color=stroke_color, AntiAlias=True)
         stroke.setStyle(skia.Paint.kStroke_Style)
         stroke.setStrokeWidth(outline_w * 2)
@@ -38,13 +53,7 @@ def draw_text(canvas: skia.Canvas, text, x, y, font, color=(255, 255, 255), alph
             stroke.setAlphaf(alpha_val)
         canvas.drawString(text, x, y, font, stroke)
 
-    if isinstance(color, (tuple, list)):
-        fill_color = skia.Color(*color)
-    elif isinstance(color, str) and color.startswith("#"):
-        h = color.lstrip("#")
-        fill_color = skia.Color(*(int(h[i:i + 2], 16) for i in (0, 2, 4)))
-    else:
-        fill_color = skia.ColorWHITE
+    fill_color = _to_skia_color(color, skia.ColorWHITE)
 
     fill = skia.Paint(Color=fill_color, AntiAlias=True)
     if not use_layer and alpha_val < 0.999:
@@ -54,17 +63,11 @@ def draw_text(canvas: skia.Canvas, text, x, y, font, color=(255, 255, 255), alph
     if use_layer:
         canvas.restore()
 
-    global elements_lower_screen
-
-    if y > canvas.imageInfo().height():
-        if y+100 > elements_lower_screen:
-            elements_lower_screen = y+100
-
 def draw_button(canvas: skia.Canvas, x, y, width, height, corners, color, text, font, font_style, font_size, text_color, text_align="center"):
     rect = skia.Rect.MakeXYWH(x, y, width, height)
     paint = skia.Paint(
         AntiAlias=True,
-        Color=skia.Color(*color)
+        Color=_to_skia_color(color, skia.ColorWHITE)
     )
 
     canvas.drawRoundRect(rect, corners, corners, paint)
@@ -74,7 +77,7 @@ def draw_button(canvas: skia.Canvas, x, y, width, height, corners, color, text, 
 
     text_paint = skia.Paint(
         AntiAlias=True,
-        Color=skia.Color(*text_color)
+        Color=_to_skia_color(text_color, skia.ColorBLACK)
     )
 
     width_t = font.measureText(text)
@@ -89,17 +92,11 @@ def draw_button(canvas: skia.Canvas, x, y, width, height, corners, color, text, 
 
     canvas.drawString(text, text_x, text_y, font, text_paint)
 
-    global elements_lower_screen
-
-    if y > canvas.imageInfo().height():
-        if y + width + 100 > elements_lower_screen:
-            elements_lower_screen = y + width + 100
-
 def draw_rectangle(canvas: skia.Canvas, x, y, width, height, corners_x, corners_y, color):
     rect = skia.Rect.MakeXYWH(x, y, width, height)
     paint = skia.Paint(
         AntiAlias=True,
-        Color=skia.Color(*color)
+        Color=_to_skia_color(color, skia.ColorWHITE)
     )
 
     canvas.drawRoundRect(rect, corners_x, corners_y, paint)
@@ -110,22 +107,19 @@ def draw_not_animated_image(canvas: skia.Canvas, x, y, width, height, bytes_data
     if random_id in cache.cache["images"]:
         image = cache.cache["images"][random_id]
     else:
-        data = skia.Data.MakeWithoutCopy(bytes_data)
-        image = skia.Image.MakeFromEncoded(data)
+        sk_data = skia.Data.MakeWithCopy(bytes_data)
+        image = skia.Image.MakeFromEncoded(sk_data)
+        if image is not None:
+            cache.cache["images"][random_id] = image
 
-        cache.cache["images"][random_id] = image
+    if image is None:
+        return
 
     sampling = skia.SamplingOptions(skia.FilterMode.kLinear)
 
     dest_rect = skia.Rect(float(x), float(y), float(x + width), float(y + height))
 
     canvas.drawImageRect(image, dest_rect, sampling, None)
-
-    global elements_lower_screen
-
-    if y > canvas.imageInfo().height():
-        if y + width + 100 > elements_lower_screen:
-            elements_lower_screen = y + width + 100
 
 
 def draw(window: w.ShiftWindow, tab_index):
@@ -136,48 +130,43 @@ def draw(window: w.ShiftWindow, tab_index):
     if canvas is None:
         return None
 
+    tasks = list(drawer_tasks)
     color = None
 
-    for task in drawer_tasks:
+    for task in tasks:
         if task["type"] == "fill_background":
             color = task["color"]
             break
 
-    if color is None:
-        canvas.clear(skia.Color(11, 12, 15, 255))
-    elif isinstance(color, (tuple, list)):
-        canvas.clear(skia.Color(*color))
-    elif isinstance(color, str) and color.startswith("#"):
-        h = color.lstrip("#")
-        rgb = tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
-        canvas.clear(skia.Color(*rgb))
-    else:
-        canvas.clear(skia.Color(11, 12, 15, 255))
+    canvas.clear(_to_skia_color(color, skia.Color(11, 12, 15, 255)))
 
     canvas_h = canvas.getLocalClipBounds().height()
-    max_y = 0
-    for task in drawer_tasks:
-        pos = task.get("position")
-        if pos:
-            ty = pos.get("y", 0)
-            th = task.get("height", 0)
-            if 0 <= ty < 10000 and ty + th > max_y:
-                max_y = ty + th
-        elif "y" in task:
-            ty = task.get("y", 0)
-            th = task.get("height", 0)
-            if 0 <= ty < 10000 and ty + th > max_y:
-                max_y = ty + th
-
-    if max_y > canvas_h:
-        data.elements_lower_screen = int(max_y - canvas_h + 80)
+    if not data.y_scrolling.get("automatic", True) and data.y_scrolling.get("ymax") is not None:
+        data.elements_lower_screen = max(0, int(data.y_scrolling["ymax"]))
     else:
-        data.elements_lower_screen = 0
+        max_y = 0
+        for task in tasks:
+            pos = task.get("position")
+            if pos:
+                ty = pos.get("y", 0)
+                th = task.get("height", 0)
+                if 0 <= ty < 10000 and ty + th > max_y:
+                    max_y = ty + th
+            elif "y" in task:
+                ty = task.get("y", 0)
+                th = task.get("height", 0)
+                if 0 <= ty < 10000 and ty + th > max_y:
+                    max_y = ty + th
+
+        if max_y > canvas_h:
+            data.elements_lower_screen = int(max_y - canvas_h + 80)
+        else:
+            data.elements_lower_screen = 0
 
     screen_set.update_pos_y(canvas)
     cur_scroll_y = data.y_scroll_status.get("y", 0.0)
 
-    for task in drawer_tasks:
+    for task in tasks:
         pos = task.get("position")
         if pos:
             ty = pos.get("y", 0)

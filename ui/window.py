@@ -564,7 +564,8 @@ class TabBar(QWidget):
 
     def set_title(self, index: int, title: str):
         """Меняет заголовок вкладки по индексу (длинный текст обрезается с «…»)."""
-        self._tabs[index].set_title(title)
+        if 0 <= index < len(self._tabs):
+            self._tabs[index].set_title(title)
 
     def set_current(self, index: int):
         """Делает вкладку активной (плавно подсвечивает её) и испускает currentChanged(index)."""
@@ -599,7 +600,8 @@ class TabBar(QWidget):
             self.set_current((self.current_index() + step) % len(self._tabs))
 
     def _on_activated(self, tab):
-        self.set_current(self._tabs.index(tab))
+        if tab in self._tabs:
+            self.set_current(self._tabs.index(tab))
 
     def _on_close(self, tab):
         if tab in self._tabs:
@@ -978,8 +980,17 @@ class QtImage(QOpenGLWidget):
     def wheelEvent(self, e):
         dy = e.angleDelta().y()
         _alt_data.mouse_state["wheel"] = _alt_data.mouse_state.get("wheel", 0.0) + dy / 120.0
-        if dy != 0:
+        if dy != 0 and _alt_data.y_scrolling.get("enabled", True):
             lines = 3
+            if sys.platform == "win32":
+                try:
+                    import ctypes
+                    scroll_lines = ctypes.c_uint()
+                    ctypes.windll.user32.SystemParametersInfoW(0x0068, 0, ctypes.byref(scroll_lines), 0)
+                    if scroll_lines.value > 0:
+                        lines = scroll_lines.value
+                except Exception:
+                    lines = 3
             to_pixels = (dy / 120.0) * lines * 33
             max_scroll = max(0, getattr(_alt_data, "elements_lower_screen", 0))
             cur_target = _alt_data.y_scroll_status.get("target_y", _alt_data.y_scroll_status.get("y", 0.0))

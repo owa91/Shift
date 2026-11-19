@@ -7,7 +7,7 @@ class Cursor:
     def __init__(self, lua, window: ShiftWindow):
         self.lua: LuaRuntime = lua
         self.window = window
-        self._listeners = []
+        self._listeners = {}
         self.last_pos = []
 
         mouse.hook(self.on_move)
@@ -26,8 +26,8 @@ class Cursor:
 
     def trigger(self, event_name, *args):
         if event_name in self._listeners:
-            for callback in self._listeners[event_name]:
-                callback(*args)
+            for callback in list(self._listeners[event_name]):
+                events.append((callback, args))
 
     def get_position(self):
         x, y = mouse.get_position()

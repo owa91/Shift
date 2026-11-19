@@ -16,18 +16,37 @@ def _safe_json(response):
         return None
 
 
-def _to_lua(value):
-    if _lua is None:
+def _to_lua(value, lua_rt=None):
+    rt = lua_rt or _lua
+    if rt is None:
         return value
     if isinstance(value, dict):
-        return _lua.table_from({k: _to_lua(v) for k, v in value.items()})
+        return rt.table_from({k: _to_lua(v, rt) for k, v in value.items()})
     if isinstance(value, list):
-        return _lua.table_from([_to_lua(v) for v in value])
+        return rt.table_from([_to_lua(v, rt) for v in value])
+    return value
+
+
+def _from_lua(value):
+    if value is None or isinstance(value, (str, bytes, int, float, bool)):
+        return value
+    if isinstance(value, dict):
+        return {k: _from_lua(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_from_lua(v) for v in value]
+    if hasattr(value, "items"):
+        items = list(value.items())
+        if items and all(isinstance(k, int) for k, _ in items):
+            keys = sorted(k for k, _ in items)
+            if keys == list(range(1, len(keys) + 1)):
+                return [_from_lua(value[k]) for k in keys]
+        return {k: _from_lua(v) for k, v in items}
     return value
 
 
 class post_request:
-    def __init__(self, url="https://google.com/"):
+    def __init__(self, url="https://google.com/", lua_rt=None):
+        self._lua = lua_rt
         self.url: str = url
         self.headers = {
             "User-Agent": f"Shift/{versionshift}, Alt/{data.version}, {platform.system()}/{platform.release()}",
@@ -43,13 +62,13 @@ class post_request:
 
     def send(self):
         if not self.url.startswith("https://"):
-            if self.url.startswith("http://") and not data.is_localfile and not data.requests_settings.get(
-                    "http_allowed"):
-                data.console_messages.append({
-                    "type": "error",
-                    "message": "http cannot use because this isn't localfile"
-                })
-                return
+            if self.url.startswith("http://"):
+                if not data.is_localfile and not data.requests_settings.get("http_allowed"):
+                    data.console_messages.append({
+                        "type": "error",
+                        "message": "http cannot use because this isn't localfile"
+                    })
+                    return
             else:
                 data.console_messages.append({
                     "type": "error",
@@ -70,11 +89,16 @@ class post_request:
         request: requests.Response = None
 
         try:
-            request = requests.post(self.url, headers=self.headers, json=self.json, data=self.data)
+            request = requests.post(
+                self.url,
+                headers=_from_lua(self.headers),
+                json=_from_lua(self.json),
+                data=_from_lua(self.data)
+            )
         except Exception as e:
             data.console_messages.append({
                 "type": "error",
-                "message": e,
+                "message": str(e),
             })
 
             data.network_requests[index] = {
@@ -82,34 +106,36 @@ class post_request:
                 "created_by": "script/lua",
                 "when": data.network_requests[index]["when"],
                 "status": -1,
-                "method": "GET",
+                "method": "POST",
                 "ping": (time.time() - data.network_requests[index]["when"]) * 1000,
-                "text": e,
+                "text": str(e),
             }
 
             return
 
+        parsed_json = _safe_json(request)
         data.network_requests[index] = {
             "endpoint": self.url,
             "created_by": "script/lua",
             "when": data.network_requests[index]["when"],
             "status": request.status_code,
-            "method": "GET",
+            "method": "POST",
             "ping": (time.time() - data.network_requests[index]["when"]) * 1000,
             "headers": request.headers,
-            "json": _safe_json(request),
+            "json": parsed_json,
             "text": request.text,
             "content": request.content
         }
 
         self.status_code = request.status_code
         self.text = request.text
-        self.got_json = _to_lua(_safe_json(request))
+        self.got_json = _to_lua(parsed_json, self._lua)
         self.content = request.content
         self.got_headers = request.headers
 
 class get_request:
-    def __init__(self, url="https://google.com/"):
+    def __init__(self, url="https://google.com/", lua_rt=None):
+        self._lua = lua_rt
         self.url: str = url
         self.headers = {
             "User-Agent": f"Shift/{versionshift}, Alt/{data.version}, {platform.system()}/{platform.release()}",
@@ -123,12 +149,13 @@ class get_request:
 
     def send(self):
         if not self.url.startswith("https://"):
-            if self.url.startswith("http://") and not data.is_localfile and not data.requests_settings.get("http_allowed"):
-                data.console_messages.append({
-                    "type": "error",
-                    "message": "http cannot use because this isn't localfile"
-                })
-                return
+            if self.url.startswith("http://"):
+                if not data.is_localfile and not data.requests_settings.get("http_allowed"):
+                    data.console_messages.append({
+                        "type": "error",
+                        "message": "http cannot use because this isn't localfile"
+                    })
+                    return
             else:
                 data.console_messages.append({
                     "type": "error",
@@ -149,11 +176,11 @@ class get_request:
         request: requests.Response = None
 
         try:
-            request = requests.get(self.url, headers=self.headers)
+            request = requests.get(self.url, headers=_from_lua(self.headers))
         except Exception as e:
             data.console_messages.append({
                 "type": "error",
-                "message": e,
+                "message": str(e),
             })
 
             data.network_requests[index] = {
@@ -163,11 +190,12 @@ class get_request:
                 "status": -1,
                 "method": "GET",
                 "ping": (time.time() - data.network_requests[index]["when"]) * 1000,
-                "text": e,
+                "text": str(e),
             }
 
             return
 
+        parsed_json = _safe_json(request)
         data.network_requests[index] = {
             "endpoint": self.url,
             "created_by": "script/lua",
@@ -176,14 +204,14 @@ class get_request:
             "method": "GET",
             "ping": (time.time() - data.network_requests[index]["when"]) * 1000,
             "headers": request.headers,
-            "json": _safe_json(request),
+            "json": parsed_json,
             "text": request.text,
             "content": request.content
         }
 
         self.status_code = request.status_code
         self.text = request.text
-        self.json = _to_lua(_safe_json(request))
+        self.json = _to_lua(parsed_json, self._lua)
         self.content = request.content
         self.got_headers = request.headers
 
@@ -194,8 +222,8 @@ class Requests:
         _lua = lua
         self.lua: LuaRuntime = lua
         lua.globals()['requests'] = {
-            "get": get_request,
-            "post": post_request,
+            "get": lambda url="https://google.com/": get_request(url, lua),
+            "post": lambda url="https://google.com/": post_request(url, lua),
         }
 
 

@@ -5,10 +5,10 @@ from ui.window import ShiftWindow
 import time
 import traceback
 
-lua = LuaRuntime(unpack_returned_tuples=True)
-lua.execute('collectgarbage("generational")')
-
 def load_script(lua_code, window: ShiftWindow):
+    lua = LuaRuntime(unpack_returned_tuples=True)
+    lua.execute('collectgarbage("generational")')
+
     drawer.Drawer(lua, window)
     cursor.Cursor(lua, window)
     screen.Screen(lua, window)

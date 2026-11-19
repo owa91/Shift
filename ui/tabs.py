@@ -21,6 +21,9 @@ def on_tab_closed(index):
                 t["timer"].stop()
             tabs.pop(i)
             break
+    for t in tabs:
+        if t["index"] > index:
+            t["index"] -= 1
 
 
 def load(index, url: str, app):
@@ -32,6 +35,12 @@ def load(index, url: str, app):
             tab = stab
             break
 
+    if tab is None:
+        return
+
+    if "timer" in tab:
+        tab["timer"].stop()
+
     lua_code = ""
     if url.startswith("shift://"):
         folder = Path("lua_scripts")
@@ -39,7 +48,8 @@ def load(index, url: str, app):
         if file is not None:
             lua_code = file.read_text(encoding="utf-8")
         else:
-            lua_code = f'drawer.draw_text(0, 0, "Не удалось найти файл по пути {url}", 20, "Calibri", "Italic", "#FFFFFF", false, 1.0, "left")'
+            safe_url = url.replace("\\", "\\\\").replace('"', '\\"')
+            lua_code = f'drawer.text(20, 20, "Не удалось найти файл по пути {safe_url}", 20, "Calibri", "Italic", "#FFFFFF", "left")'
 
     frames = alt.load(lua_code, app, window, tab["index"])
 

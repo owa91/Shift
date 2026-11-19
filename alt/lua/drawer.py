@@ -1,5 +1,6 @@
 from lupa.lua54 import LuaRuntime, LuaError
-from alt.data import  *
+from alt.data import *
+from alt import data
 from alt.caching import image as caching_image
 from ui.window import ShiftWindow
 import mouse
@@ -8,10 +9,15 @@ import random
 
 def _rgb(color, *rest):
     if rest:
-        return (color, *rest[:2])
+        return (color, *rest[:3])
     if isinstance(color, str) and color.startswith("#"):
         h = color.lstrip("#")
-        return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+        if len(h) == 3:
+            return tuple(int(c * 2, 16) for c in h)
+        if len(h) == 8:
+            return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4, 6))
+        if len(h) >= 6:
+            return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
     if hasattr(color, "values"):
         return list(color.values())
     return color
@@ -28,7 +34,6 @@ class button:
         self.size = 20
         self.border_corner = 10
         self.text_align = "center"
-        self.index = len(drawer_tasks)
 
         self._listeners = {}
         self._hover = False
@@ -37,7 +42,7 @@ class button:
         mouse.on_click(self.on_left_click)
         mouse.on_right_click(self.on_right_click)
 
-        drawer_tasks.append({
+        self.task = {
             "type": "button",
             "position": {"x": x, "y": y},
             "text": self.text,
@@ -50,7 +55,8 @@ class button:
             "font_size": self.size,
             "border_corner": self.border_corner,
             "text_align": self.text_align,
-        })
+        }
+        drawer_tasks.append(self.task)
 
     def event(self, event_name, callback):
         self._listeners.setdefault(event_name, []).append(callback)
@@ -70,14 +76,14 @@ class button:
                     and (self.y + scroll_y) <= m["y"] < (self.y + scroll_y) + self.height)
 
     def set_color(self, color="#ffffff", *rest):
-        drawer_tasks[self.index]["color"] = _rgb(color, *rest)
+        self.task["color"] = _rgb(color, *rest)
 
     def set_text_color(self, color="#ffffff", *rest):
-        drawer_tasks[self.index]["text_color"] = _rgb(color, *rest)
+        self.task["text_color"] = _rgb(color, *rest)
 
     def set_position(self, x=0, y=0):
         self.x, self.y = x, y
-        drawer_tasks[self.index]["position"] = {"x": x, "y": y}
+        self.task["position"] = {"x": x, "y": y}
 
     def set_size(self, width, height):
         if width is None or height is None:
@@ -88,8 +94,8 @@ class button:
             return
 
         self.width, self.height = width, height
-        drawer_tasks[self.index]["width"] = width
-        drawer_tasks[self.index]["height"] = height
+        self.task["width"] = width
+        self.task["height"] = height
 
     def set_font_style(self, font, style, size):
         if font is None or style is None or size is None:
@@ -100,26 +106,22 @@ class button:
             return
 
         self.font, self.style, self.size = font, style, size
-        drawer_tasks[self.index]["font"] = font
-        drawer_tasks[self.index]["font_style"] = style
-        drawer_tasks[self.index]["font_size"] = size
+        self.task["font"] = font
+        self.task["font_style"] = style
+        self.task["font_size"] = size
 
-    def auto_font_size(self, margin):
-        width, height = self.width, self.height
+    def auto_font_size(self, margin=10):
+        avail_w = max(1, self.width - margin * 2)
+        avail_h = max(1, self.height - margin * 2)
 
-        font_size = ((width+height)/2)-margin
+        lines = self.text.splitlines() or [""]
+        text_max_size = max(1, max(len(line) for line in lines))
 
-        text_max_size = 0
-
-        for line in self.text.splitlines():
-            if len(line) > text_max_size:
-                text_max_size = len(line)
-
-        font_size = font_size-(width-text_max_size)
+        font_size = min(avail_h / (len(lines) * 1.2), avail_w / (text_max_size * 0.6))
+        font_size = max(1.0, font_size)
 
         self.size = font_size
-
-        drawer_tasks[self.index]["font_size"] = font_size
+        self.task["font_size"] = font_size
 
     def set_text(self, text):
         if text is None:
@@ -130,7 +132,7 @@ class button:
             return
 
         self.text = text
-        drawer_tasks[self.index]["text"] = self.text
+        self.task["text"] = self.text
 
     def set_border_corner(self, val):
         if val is None:
@@ -141,7 +143,7 @@ class button:
             return
 
         self.border_corner = val
-        drawer_tasks[self.index]["border_corner"] = self.border_corner
+        self.task["border_corner"] = self.border_corner
 
     def set_text_align(self, val):
         if val is None:
@@ -152,7 +154,7 @@ class button:
             return
 
         self.text_align = val
-        drawer_tasks[self.index]["text_align"] = self.text_align
+        self.task["text_align"] = self.text_align
 
     def on_selected(self, _event):
         over = self._over()
@@ -215,7 +217,6 @@ class image:
         self.y = y
         self.source = source
         self.width, self.height = 100, 100
-        self.index = len(drawer_tasks)
         self.mapping = 1
         self.loaded = False
         self.bytes = None
@@ -224,8 +225,7 @@ class image:
         with Path("images/not-loaded.jpg").open("rb") as f:
             self.bytes = f.read()
 
-
-        drawer_tasks.append({
+        self.task = {
             "type": "image",
             "x": self.x,
             "y": self.y,
@@ -235,17 +235,18 @@ class image:
             "height": self.height,
             "mapping": self.mapping,
             "random_index": self.random_index
-        })
+        }
+        drawer_tasks.append(self.task)
 
     def set_position(self, x=0, y=0):
         self.x = x
         self.y = y
 
-        drawer_tasks[self.index]["x"], drawer_tasks[self.index]["y"] = self.x, self.y
+        self.task["x"], self.task["y"] = self.x, self.y
 
     def set_size(self, width=100, height=100):
         self.width, self.height = width, height
-        drawer_tasks[self.index]["width"], drawer_tasks[self.index]["height"] = width, height
+        self.task["width"], self.task["height"] = width, height
 
     def type_mapping(self, val=0):
         """
@@ -261,23 +262,23 @@ class image:
             return
 
         self.mapping = val
-        drawer_tasks[self.index]["mapping"] = val
+        self.task["mapping"] = val
 
     def change_source(self, source=""):
         self.source = source
-        drawer_tasks[self.index]["source"] = source
+        self.task["source"] = source
 
     def load(self):
         with Path("images/loading.jpg").open("rb") as f:
             self.bytes = f.read()
             self.random_index = random.randint(1, 1000000)
-            drawer_tasks[self.index]["random_index"] = self.random_index
-            drawer_tasks[self.index]["bytes"] = self.bytes
+            self.task["random_index"] = self.random_index
+            self.task["bytes"] = self.bytes
 
         status, val = 0, None
 
         try:
-            status, val = caching_image.load_not_animated_and_cache(self.source, is_localfile, self.random_index)
+            status, val = caching_image.load_not_animated_and_cache(self.source, data.is_localfile, self.random_index)
         except Exception as e:
             print(e)
             val = e
@@ -292,15 +293,15 @@ class image:
             with Path("images/error-image.jpg").open("rb") as f:
                 self.bytes = f.read()
                 self.random_index = random.randint(1, 1000000)
-                drawer_tasks[self.index]["random_index"] = self.random_index
-                drawer_tasks[self.index]["bytes"] = self.bytes
+                self.task["random_index"] = self.random_index
+                self.task["bytes"] = self.bytes
             return
 
         self.loaded, self.bytes = True, val
         self.random_index = random.randint(1, 1000000)
-        drawer_tasks[self.index]["random_index"] = self.random_index
-        drawer_tasks[self.index]["bytes"] = self.bytes
-        drawer_tasks[self.index]["loaded"] = self.loaded
+        self.task["random_index"] = self.random_index
+        self.task["bytes"] = self.bytes
+        self.task["loaded"] = self.loaded
 
 class rectangle:
     def __init__(self, x=0, y=0, height=100, width=100):
@@ -312,9 +313,7 @@ class rectangle:
         self.corners_y = 0
         self.color = _rgb("#ffffff")
 
-        self.index = len(drawer_tasks)
-
-        drawer_tasks.append({
+        self.task = {
             "type": "rectangle",
             "x": self.x,
             "y": self.y,
@@ -323,26 +322,27 @@ class rectangle:
             "corners_x": self.corners_x,
             "corners_y": self.corners_y,
             "color": self.color
-        })
+        }
+        drawer_tasks.append(self.task)
 
     def set_position(self, x=0, y=0):
         self.x = x
         self.y = y
 
-        drawer_tasks[self.index]["x"], drawer_tasks[self.index]["y"] = self.x, self.y
+        self.task["x"], self.task["y"] = self.x, self.y
 
     def set_size(self, width=100, height=100):
         self.width, self.height = width, height
-        drawer_tasks[self.index]["width"], drawer_tasks[self.index]["height"] = width, height
+        self.task["width"], self.task["height"] = width, height
 
     def set_corners(self, rx=0, ry=0):
         self.corners_x = rx
         self.corners_y = ry
 
-        drawer_tasks[self.index]["corners_x"], drawer_tasks[self.index]["corners_y"] = self.corners_x, self.corners_y
+        self.task["corners_x"], self.task["corners_y"] = self.corners_x, self.corners_y
 
     def set_color(self, color="#ffffff", *rest):
-        drawer_tasks[self.index]["color"] = _rgb(color, *rest)
+        self.task["color"] = _rgb(color, *rest)
 
 def run_events():
     while events:
@@ -392,12 +392,8 @@ class Drawer:
         except Exception:
             return 1280, 700
 
-    def fill_background(self, color):
-        if isinstance(color, str) and color.startswith("#"):
-            h = color.lstrip("#")
-            color = tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
-        elif hasattr(color, "values"):
-            color = list(color.values())
+    def fill_background(self, color, *rest):
+        color = _rgb(color, *rest)
 
         found_task = False
         for task in drawer_tasks:
