@@ -8,7 +8,7 @@ def start(app):
 
     window = w.create_window()
 
-    tabs.init(window)
+    tabs.init(window, app)
 
     tabs.new("shift://new", True, app)
 

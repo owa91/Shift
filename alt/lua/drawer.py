@@ -23,7 +23,8 @@ def _rgb(color, *rest):
     return color
 
 class button:
-    def __init__(self, x=0, y=0, text="Hello world!"):
+    def __init__(self, x=0, y=0, text="Hello world!", ctx=None):
+        self.ctx = ctx if ctx is not None else data
         self.x = x
         self.y = y
         self.text = text
@@ -38,9 +39,13 @@ class button:
         self._listeners = {}
         self._hover = False
 
-        mouse.hook(self.on_selected)
-        mouse.on_click(self.on_left_click)
-        mouse.on_right_click(self.on_right_click)
+        h1 = mouse.hook(self.on_selected)
+        h2 = mouse.on_click(self.on_left_click)
+        h3 = mouse.on_right_click(self.on_right_click)
+        if hasattr(self.ctx, "add_mouse_hook"):
+            self.ctx.add_mouse_hook(h1)
+            self.ctx.add_mouse_hook(h2)
+            self.ctx.add_mouse_hook(h3)
 
         self.task = {
             "type": "button",
@@ -56,22 +61,24 @@ class button:
             "border_corner": self.border_corner,
             "text_align": self.text_align,
         }
-        drawer_tasks.append(self.task)
+        self.ctx.drawer_tasks.append(self.task)
 
     def event(self, event_name, callback):
         self._listeners.setdefault(event_name, []).append(callback)
 
     def trigger(self, event_name, *args):
         for callback in list(self._listeners.get(event_name, [])):
-            events.append((callback, args))
+            self.ctx.events.append((callback, args))
 
     def _over(self):
+        if not getattr(self.ctx, "active", True):
+            return False
         if self.x < -500 or self.y < -500:
             return False
-        m = mouse_state
+        m = self.ctx.mouse_state
         if not m["inside"]:
             return False
-        scroll_y = y_scroll_status.get("y", 0)
+        scroll_y = self.ctx.y_scroll_status.get("y", 0)
         return bool(self.x <= m["x"] < self.x + self.width
                     and (self.y + scroll_y) <= m["y"] < (self.y + scroll_y) + self.height)
 
@@ -87,7 +94,7 @@ class button:
 
     def set_size(self, width, height):
         if width is None or height is None:
-            console_messages.append({
+            self.ctx.console_messages.append({
                 "type": "error",
                 "message": "width and height cannot be None",
             })
@@ -99,7 +106,7 @@ class button:
 
     def set_font_style(self, font, style, size):
         if font is None or style is None or size is None:
-            console_messages.append({
+            self.ctx.console_messages.append({
                 "type": "error",
                 "message": "font, style, size cannot be None",
             })
@@ -125,7 +132,7 @@ class button:
 
     def set_text(self, text):
         if text is None:
-            console_messages.append({
+            self.ctx.console_messages.append({
                 "type": "error",
                 "message": "text cannot be None",
             })
@@ -136,7 +143,7 @@ class button:
 
     def set_border_corner(self, val):
         if val is None:
-            console_messages.append({
+            self.ctx.console_messages.append({
                 "type": "error",
                 "message": "border corner cannot be None",
             })
@@ -147,7 +154,7 @@ class button:
 
     def set_text_align(self, val):
         if val is None:
-            console_messages.append({
+            self.ctx.console_messages.append({
                 "type": "error",
                 "message": "text align cannot be None",
             })
@@ -172,7 +179,8 @@ class button:
 
 
 class text:
-    def __init__(self, x=0, y=0, text="", font_size=14, font="Calibri", font_style="Regular", color="#ffffff", align="left"):
+    def __init__(self, x=0, y=0, text="", font_size=14, font="Calibri", font_style="Regular", color="#ffffff", align="left", ctx=None):
+        self.ctx = ctx if ctx is not None else data
         self.task = {
             "index": -1,
             "type": "text",
@@ -184,7 +192,7 @@ class text:
             "align": align,
             "color": _rgb(color),
         }
-        drawer_tasks.append(self.task)
+        self.ctx.drawer_tasks.append(self.task)
 
     def set_text(self, value):
         self.task["text"] = value
@@ -208,11 +216,12 @@ class text:
         self.task["outline"] = {"color": _rgb(color), "weight": weight}
 
     def remove(self):
-        if self.task in drawer_tasks:
-            drawer_tasks.remove(self.task)
+        if self.task in self.ctx.drawer_tasks:
+            self.ctx.drawer_tasks.remove(self.task)
 
 class image:
-    def __init__(self, x=0, y=0, source=""):
+    def __init__(self, x=0, y=0, source="", ctx=None):
+        self.ctx = ctx if ctx is not None else data
         self.x = x
         self.y = y
         self.source = source
@@ -236,7 +245,7 @@ class image:
             "mapping": self.mapping,
             "random_index": self.random_index
         }
-        drawer_tasks.append(self.task)
+        self.ctx.drawer_tasks.append(self.task)
 
     def set_position(self, x=0, y=0):
         self.x = x
@@ -255,7 +264,7 @@ class image:
         """
 
         if val < 0 or val > 1:
-            console_messages.append({
+            self.ctx.console_messages.append({
                 "type": "error",
                 "message": "value must be between 0 and 1",
             })
@@ -278,14 +287,14 @@ class image:
         status, val = 0, None
 
         try:
-            status, val = caching_image.load_not_animated_and_cache(self.source, data.is_localfile, self.random_index)
+            status, val = caching_image.load_not_animated_and_cache(self.source, self.ctx.is_localfile, self.random_index)
         except Exception as e:
             print(e)
             val = e
 
         if status == 0:
             print(val)
-            console_messages.append({
+            self.ctx.console_messages.append({
                 "type": "error",
                 "message": f"cannot load image. Cause: {val}",
             })
@@ -304,7 +313,8 @@ class image:
         self.task["loaded"] = self.loaded
 
 class rectangle:
-    def __init__(self, x=0, y=0, height=100, width=100):
+    def __init__(self, x=0, y=0, height=100, width=100, ctx=None):
+        self.ctx = ctx if ctx is not None else data
         self.x = x
         self.y = y
         self.height = height
@@ -323,7 +333,7 @@ class rectangle:
             "corners_y": self.corners_y,
             "color": self.color
         }
-        drawer_tasks.append(self.task)
+        self.ctx.drawer_tasks.append(self.task)
 
     def set_position(self, x=0, y=0):
         self.x = x
@@ -344,29 +354,31 @@ class rectangle:
     def set_color(self, color="#ffffff", *rest):
         self.task["color"] = _rgb(color, *rest)
 
-def run_events():
-    while events:
-        callback, args = events.pop(0)
+def run_events(ctx=None):
+    page_ctx = ctx if ctx is not None else data
+    while page_ctx.events:
+        callback, args = page_ctx.events.pop(0)
         try:
             callback(*args)
         except Exception as e:
-            console_messages.append({
+            page_ctx.console_messages.append({
                 "type": "error",
                 "message": f"Error in event handler: {e}"
             })
 
 
 class Drawer:
-    def __init__(self, lua, window: ShiftWindow):
+    def __init__(self, lua, window: ShiftWindow, ctx=None):
         self.lua: LuaRuntime = lua
         self.texts = 0
         self.window = window
+        self.ctx = ctx if ctx is not None else data
 
         lua.globals()['drawer'] = {
-            "button": button,
-            "text": text,
-            "image": image,
-            "rectangle": rectangle,
+            "button": lambda x=0, y=0, text="Hello world!": button(x, y, text, ctx=self.ctx),
+            "text": lambda x=0, y=0, txt="", font_size=14, font="Calibri", font_style="Regular", color="#ffffff", align="left": text(x, y, txt, font_size, font, font_style, color, align, ctx=self.ctx),
+            "image": lambda x=0, y=0, source="": image(x, y, source, ctx=self.ctx),
+            "rectangle": lambda x=0, y=0, height=100, width=100: rectangle(x, y, height, width, ctx=self.ctx),
             "fill_background": self.fill_background,
             "get_size_screen": self.get_size_screen,
             "get_mouse": self.get_mouse,
@@ -375,17 +387,17 @@ class Drawer:
 
     def get_wheel(self):
         # wheel notches accumulated since the last call (positive = away from user)
-        v = mouse_state.get("wheel", 0.0)
-        mouse_state["wheel"] = 0.0
+        v = self.ctx.mouse_state.get("wheel", 0.0)
+        self.ctx.mouse_state["wheel"] = 0.0
         return v
 
     def get_mouse(self):
-        m = mouse_state
+        m = self.ctx.mouse_state
         return m["x"], m["y"], m["down"], m["inside"]
 
     def get_size_screen(self):
         try:
-            size = self.window.get_canvas_size()
+            size = self.window.get_canvas_size(getattr(self.ctx, "tab_index", None))
             if not size or size.width is None or size.height is None:
                 return 1280, 700
             return size.width, size.height
@@ -396,14 +408,14 @@ class Drawer:
         color = _rgb(color, *rest)
 
         found_task = False
-        for task in drawer_tasks:
+        for task in self.ctx.drawer_tasks:
             if task["type"] == "fill_background":
                 task["color"] = color
                 found_task = True
                 break
 
         if not found_task:
-            drawer_tasks.append({
+            self.ctx.drawer_tasks.append({
                 "type": "fill_background",
                 "color": color
             })

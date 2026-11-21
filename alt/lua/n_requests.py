@@ -45,11 +45,12 @@ def _from_lua(value):
 
 
 class post_request:
-    def __init__(self, url="https://google.com/", lua_rt=None):
+    def __init__(self, url="https://google.com/", lua_rt=None, ctx=None):
         self._lua = lua_rt
+        self.ctx = ctx if ctx is not None else data
         self.url: str = url
         self.headers = {
-            "User-Agent": f"Shift/{versionshift}, Alt/{data.version}, {platform.system()}/{platform.release()}",
+            "User-Agent": f"Shift/{versionshift}, Alt/{self.ctx.version}, {platform.system()}/{platform.release()}",
             "Alt_Created_By": "script/lua"
         }
         self.json = None
@@ -63,22 +64,22 @@ class post_request:
     def send(self):
         if not self.url.startswith("https://"):
             if self.url.startswith("http://"):
-                if not data.is_localfile and not data.requests_settings.get("http_allowed"):
-                    data.console_messages.append({
+                if not self.ctx.is_localfile and not self.ctx.requests_settings.get("http_allowed"):
+                    self.ctx.console_messages.append({
                         "type": "error",
                         "message": "http cannot use because this isn't localfile"
                     })
                     return
             else:
-                data.console_messages.append({
+                self.ctx.console_messages.append({
                     "type": "error",
                     "message": "url hasn't written right"
                 })
                 return
 
-        index = len(data.network_requests)
+        index = len(self.ctx.network_requests)
 
-        data.network_requests.append({
+        self.ctx.network_requests.append({
             "endpoint": self.url,
             "created_by": "script/lua",
             "when": time.time(),
@@ -96,31 +97,31 @@ class post_request:
                 data=_from_lua(self.data)
             )
         except Exception as e:
-            data.console_messages.append({
+            self.ctx.console_messages.append({
                 "type": "error",
                 "message": str(e),
             })
 
-            data.network_requests[index] = {
+            self.ctx.network_requests[index] = {
                 "endpoint": self.url,
                 "created_by": "script/lua",
-                "when": data.network_requests[index]["when"],
+                "when": self.ctx.network_requests[index]["when"],
                 "status": -1,
                 "method": "POST",
-                "ping": (time.time() - data.network_requests[index]["when"]) * 1000,
+                "ping": (time.time() - self.ctx.network_requests[index]["when"]) * 1000,
                 "text": str(e),
             }
 
             return
 
         parsed_json = _safe_json(request)
-        data.network_requests[index] = {
+        self.ctx.network_requests[index] = {
             "endpoint": self.url,
             "created_by": "script/lua",
-            "when": data.network_requests[index]["when"],
+            "when": self.ctx.network_requests[index]["when"],
             "status": request.status_code,
             "method": "POST",
-            "ping": (time.time() - data.network_requests[index]["when"]) * 1000,
+            "ping": (time.time() - self.ctx.network_requests[index]["when"]) * 1000,
             "headers": request.headers,
             "json": parsed_json,
             "text": request.text,
@@ -134,11 +135,12 @@ class post_request:
         self.got_headers = request.headers
 
 class get_request:
-    def __init__(self, url="https://google.com/", lua_rt=None):
+    def __init__(self, url="https://google.com/", lua_rt=None, ctx=None):
         self._lua = lua_rt
+        self.ctx = ctx if ctx is not None else data
         self.url: str = url
         self.headers = {
-            "User-Agent": f"Shift/{versionshift}, Alt/{data.version}, {platform.system()}/{platform.release()}",
+            "User-Agent": f"Shift/{versionshift}, Alt/{self.ctx.version}, {platform.system()}/{platform.release()}",
             "Alt_Created_By": "script/lua"
         }
         self.got_headers = None
@@ -150,22 +152,22 @@ class get_request:
     def send(self):
         if not self.url.startswith("https://"):
             if self.url.startswith("http://"):
-                if not data.is_localfile and not data.requests_settings.get("http_allowed"):
-                    data.console_messages.append({
+                if not self.ctx.is_localfile and not self.ctx.requests_settings.get("http_allowed"):
+                    self.ctx.console_messages.append({
                         "type": "error",
                         "message": "http cannot use because this isn't localfile"
                     })
                     return
             else:
-                data.console_messages.append({
+                self.ctx.console_messages.append({
                     "type": "error",
                     "message": "url hasn't written right"
                 })
                 return
 
-        index = len(data.network_requests)
+        index = len(self.ctx.network_requests)
 
-        data.network_requests.append({
+        self.ctx.network_requests.append({
             "endpoint": self.url,
             "created_by": "script/lua",
             "when": time.time(),
@@ -178,31 +180,31 @@ class get_request:
         try:
             request = requests.get(self.url, headers=_from_lua(self.headers))
         except Exception as e:
-            data.console_messages.append({
+            self.ctx.console_messages.append({
                 "type": "error",
                 "message": str(e),
             })
 
-            data.network_requests[index] = {
+            self.ctx.network_requests[index] = {
                 "endpoint": self.url,
                 "created_by": "script/lua",
-                "when": data.network_requests[index]["when"],
+                "when": self.ctx.network_requests[index]["when"],
                 "status": -1,
                 "method": "GET",
-                "ping": (time.time() - data.network_requests[index]["when"]) * 1000,
+                "ping": (time.time() - self.ctx.network_requests[index]["when"]) * 1000,
                 "text": str(e),
             }
 
             return
 
         parsed_json = _safe_json(request)
-        data.network_requests[index] = {
+        self.ctx.network_requests[index] = {
             "endpoint": self.url,
             "created_by": "script/lua",
-            "when": data.network_requests[index]["when"],
+            "when": self.ctx.network_requests[index]["when"],
             "status": request.status_code,
             "method": "GET",
-            "ping": (time.time() - data.network_requests[index]["when"]) * 1000,
+            "ping": (time.time() - self.ctx.network_requests[index]["when"]) * 1000,
             "headers": request.headers,
             "json": parsed_json,
             "text": request.text,
@@ -217,13 +219,14 @@ class get_request:
 
 
 class Requests:
-    def __init__(self, lua, window: ShiftWindow):
+    def __init__(self, lua, window: ShiftWindow, ctx=None):
         global _lua
         _lua = lua
         self.lua: LuaRuntime = lua
+        self.ctx = ctx if ctx is not None else data
         lua.globals()['requests'] = {
-            "get": lambda url="https://google.com/": get_request(url, lua),
-            "post": lambda url="https://google.com/": post_request(url, lua),
+            "get": lambda url="https://google.com/": get_request(url, lua, self.ctx),
+            "post": lambda url="https://google.com/": post_request(url, lua, self.ctx),
         }
 
 

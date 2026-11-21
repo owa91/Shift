@@ -122,15 +122,16 @@ def draw_not_animated_image(canvas: skia.Canvas, x, y, width, height, bytes_data
     canvas.drawImageRect(image, dest_rect, sampling, None)
 
 
-def draw(window: w.ShiftWindow, tab_index):
+def draw(window: w.ShiftWindow, tab_index, ctx=None):
     if window is None:
         return None
 
+    page_ctx = ctx if ctx is not None else data
     canvas = window.get_canvas(tab_index)
     if canvas is None:
         return None
 
-    tasks = list(drawer_tasks)
+    tasks = list(page_ctx.drawer_tasks)
     color = None
 
     for task in tasks:
@@ -141,8 +142,8 @@ def draw(window: w.ShiftWindow, tab_index):
     canvas.clear(_to_skia_color(color, skia.Color(11, 12, 15, 255)))
 
     canvas_h = canvas.getLocalClipBounds().height()
-    if not data.y_scrolling.get("automatic", True) and data.y_scrolling.get("ymax") is not None:
-        data.elements_lower_screen = max(0, int(data.y_scrolling["ymax"]))
+    if not page_ctx.y_scrolling.get("automatic", True) and page_ctx.y_scrolling.get("ymax") is not None:
+        page_ctx.elements_lower_screen = max(0, int(page_ctx.y_scrolling["ymax"]))
     else:
         max_y = 0
         for task in tasks:
@@ -159,12 +160,12 @@ def draw(window: w.ShiftWindow, tab_index):
                     max_y = ty + th
 
         if max_y > canvas_h:
-            data.elements_lower_screen = int(max_y - canvas_h + 80)
+            page_ctx.elements_lower_screen = int(max_y - canvas_h + 80)
         else:
-            data.elements_lower_screen = 0
+            page_ctx.elements_lower_screen = 0
 
-    screen_set.update_pos_y(canvas)
-    cur_scroll_y = data.y_scroll_status.get("y", 0.0)
+    screen_set.update_pos_y(canvas, page_ctx)
+    cur_scroll_y = page_ctx.y_scroll_status.get("y", 0.0)
 
     for task in tasks:
         pos = task.get("position")
@@ -198,7 +199,7 @@ def draw(window: w.ShiftWindow, tab_index):
                     task.get("align", "left"),
                 )
             except Exception as e:
-                console_messages.append({
+                page_ctx.console_messages.append({
                     "type": "warn",
                     "message": e,
                 })
@@ -220,7 +221,7 @@ def draw(window: w.ShiftWindow, tab_index):
                     task["text_align"],
                 )
             except Exception as e:
-                console_messages.append({
+                page_ctx.console_messages.append({
                     "type": "warn",
                     "message": e,
                 })
@@ -236,7 +237,7 @@ def draw(window: w.ShiftWindow, tab_index):
                     task["random_index"]
                 )
             except Exception as e:
-                console_messages.append({
+                page_ctx.console_messages.append({
                     "type": "warn",
                     "message": e,
                 })
@@ -254,7 +255,7 @@ def draw(window: w.ShiftWindow, tab_index):
                     task["color"]
                 )
             except Exception as e:
-                console_messages.append({
+                page_ctx.console_messages.append({
                     "type": "warn",
                     "message": e,
                 })

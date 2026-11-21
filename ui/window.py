@@ -627,15 +627,20 @@ class AddressBar(Animated, QWidget):
             "selection-background-color:%s;font-size:13px;}"
             % (Theme.TEXT.name(), Theme.ACCENT_PRESS.name()))
         self.edit.installEventFilter(self)
-        self.edit.returnPressed.connect(lambda: self.submitted.emit(self.edit.text().strip()))
+        self.edit.returnPressed.connect(self._on_submit)
 
         lay = QHBoxLayout(self)
         lay.setContentsMargins(16, 0, 16, 0)
         lay.addWidget(self.edit)
 
-    def set_url(self, url: str):
+    def _on_submit(self):
+        text = self.edit.text().strip()
+        self.edit.clearFocus()
+        self.submitted.emit(text)
+
+    def set_url(self, url: str, force: bool = False):
         """Показывает адрес в поле ввода. Если пользователь сейчас печатает (поле в фокусе), текст не трогает."""
-        if not self.edit.hasFocus():
+        if force or not self.edit.hasFocus():
             self.edit.setText(url)
 
     def focus_address(self):
@@ -953,34 +958,43 @@ class QtImage(QOpenGLWidget):
         self._buf_w: int = 0
         self._buf_h: int = 0
         self._frame_ready = False       # в GPU-поверхности есть готовый кадр
+        self._page_ctx = None
 
         self.setMouseTracking(True)     # двигать мышь без зажатой кнопки тоже нужно видеть
 
         if image is not None:
             self.set_image(image)
 
+    def set_page_context(self, ctx) -> None:
+        self._page_ctx = ctx
+
+    def _ctx(self):
+        return self._page_ctx if self._page_ctx is not None else _alt_data
+
     # --- мышь: сохраняем состояние для Lua (drawer.get_mouse)
     def mouseMoveEvent(self, e):
         p = e.position()
-        _alt_data.mouse_state.update(x=p.x(), y=p.y(), inside=True)
+        self._ctx().mouse_state.update(x=p.x(), y=p.y(), inside=True)
 
     def mousePressEvent(self, e):
         p = e.position()
-        _alt_data.mouse_state.update(x=p.x(), y=p.y(), inside=True)
+        ctx = self._ctx()
+        ctx.mouse_state.update(x=p.x(), y=p.y(), inside=True)
         if e.button() == Qt.MouseButton.LeftButton:
-            _alt_data.mouse_state["down"] = True
+            ctx.mouse_state["down"] = True
 
     def mouseReleaseEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
-            _alt_data.mouse_state["down"] = False
+            self._ctx().mouse_state["down"] = False
 
     def leaveEvent(self, e):
-        _alt_data.mouse_state["inside"] = False
+        self._ctx().mouse_state["inside"] = False
 
     def wheelEvent(self, e):
         dy = e.angleDelta().y()
-        _alt_data.mouse_state["wheel"] = _alt_data.mouse_state.get("wheel", 0.0) + dy / 120.0
-        if dy != 0 and _alt_data.y_scrolling.get("enabled", True):
+        ctx = self._ctx()
+        ctx.mouse_state["wheel"] = ctx.mouse_state.get("wheel", 0.0) + dy / 120.0
+        if dy != 0 and ctx.y_scrolling.get("enabled", True):
             lines = 3
             if sys.platform == "win32":
                 try:
@@ -992,11 +1006,11 @@ class QtImage(QOpenGLWidget):
                 except Exception:
                     lines = 3
             to_pixels = (dy / 120.0) * lines * 33
-            max_scroll = max(0, getattr(_alt_data, "elements_lower_screen", 0))
-            cur_target = _alt_data.y_scroll_status.get("target_y", _alt_data.y_scroll_status.get("y", 0.0))
+            max_scroll = max(0, getattr(ctx, "elements_lower_screen", 0))
+            cur_target = ctx.y_scroll_status.get("target_y", ctx.y_scroll_status.get("y", 0.0))
             if max_scroll > 0 or cur_target < 0:
                 new_target = max(-float(max_scroll), min(0.0, cur_target + to_pixels))
-                _alt_data.y_scroll_status["target_y"] = new_target
+                ctx.y_scroll_status["target_y"] = new_target
                 self.update()
         e.accept()
 
@@ -1664,9 +1678,9 @@ class ShiftWindow(QMainWindow):
         self.tabChanged.emit(index)
 
     # --- состояние интерфейса
-    def set_url(self, url: str):
+    def set_url(self, url: str, force: bool = False):
         """Выводит адрес текущей страницы в адресной строке. Не мешает, если пользователь сейчас печатает."""
-        self.address.set_url(url)
+        self.address.set_url(url, force=force)
 
     def set_nav_enabled(self, back: bool, forward: bool):
         """Включает/выключает кнопки «назад» и «вперёд». Выключенные становятся тусклыми и не нажимаются."""
